@@ -21,6 +21,20 @@ export default function NuevoGasto() {
     setSelectedCat(cat)
     setSelectedSub(sub)
 
+    if (sub.esNormal) {
+      const id = uuidv4()
+      navigate(`/revisar/${id}`, {
+        state: {
+          isNew: true,
+          categoriaId: cat.id,
+          subcategoriaId: sub.id,
+          hasImage: false,
+          esNormal: true,
+        },
+      })
+      return
+    }
+
     if (sub.esKilometraje) {
       navigate('/kilometraje', { state: { categoria: cat, subcategoria: sub } })
       return

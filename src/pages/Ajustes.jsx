@@ -520,13 +520,68 @@ function TabCategorias({ toast }) {
   )
 }
 
+function getTipoGasto(sub) {
+  if (sub.esKilometraje) return 'kilometraje'
+  if (sub.tieneComensales) return 'comensales'
+  if (sub.esNormal) return 'normal'
+  return 'ticket'
+}
+
+function applyTipoGasto(tipo) {
+  return {
+    tieneTicket:     tipo === 'ticket' || tipo === 'comensales',
+    esKilometraje:   tipo === 'kilometraje',
+    tieneComensales: tipo === 'comensales',
+    esNormal:        tipo === 'normal',
+  }
+}
+
+const TIPO_GASTO_OPTIONS = [
+  { value: 'normal',      label: 'Normal' },
+  { value: 'ticket',      label: 'Con ticket' },
+  { value: 'kilometraje', label: 'Kilometraje' },
+  { value: 'comensales',  label: 'Con comensales' },
+]
+
+function TipoGastoRadio({ value, onChange }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Tipo de gasto</label>
+      <div className="grid grid-cols-2 gap-2">
+        {TIPO_GASTO_OPTIONS.map(opt => (
+          <label
+            key={opt.value}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-xs ${value === opt.value ? 'border-primary bg-primary/5 text-primary font-medium' : 'border-gray-200 text-gray-600'}`}
+          >
+            <input
+              type="radio"
+              name="tipoGasto"
+              value={opt.value}
+              checked={value === opt.value}
+              onChange={() => onChange(opt.value)}
+              className="sr-only"
+            />
+            {opt.label}
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function SubcategoriaRow({ categoriaId, sub, subIdx, totalSubs, editing, onEdit, onDoneEdit, onUpdate, onDelete, onMove }) {
   const [localSub, setLocalSub] = useState(sub)
+  const [tipoGasto, setTipoGasto] = useState(() => getTipoGasto(sub))
 
   // Sync localSub when sub prop changes (e.g. after save)
   const prevSubId = localSub.id
   if (prevSubId !== sub.id) {
     setLocalSub(sub)
+  }
+
+  const handleTipoChange = (tipo) => {
+    setTipoGasto(tipo)
+    setLocalSub(s => ({ ...s, ...applyTipoGasto(tipo) }))
   }
 
   if (editing) {
@@ -551,42 +606,7 @@ function SubcategoriaRow({ categoriaId, sub, subIdx, totalSubs, editing, onEdit,
             step="0.01"
           />
         </div>
-        <div className="flex flex-wrap gap-3">
-          <label className="flex items-center gap-1 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={!!localSub.tieneTicket}
-              disabled={!!localSub.esKilometraje}
-              onChange={e => setLocalSub(s => ({ ...s, tieneTicket: e.target.checked }))}
-              className="w-3.5 h-3.5"
-            />
-            <span className={localSub.esKilometraje ? 'text-gray-300' : ''}>Ticket</span>
-          </label>
-          <label className="flex items-center gap-1 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={!!localSub.esKilometraje}
-              onChange={e => setLocalSub(s => ({
-                ...s,
-                esKilometraje: e.target.checked,
-                tieneTicket: e.target.checked ? false : s.tieneTicket,
-                tieneComensales: e.target.checked ? false : s.tieneComensales,
-              }))}
-              className="w-3.5 h-3.5"
-            />
-            <span>Kilometraje</span>
-          </label>
-          <label className="flex items-center gap-1 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={!!localSub.tieneComensales}
-              disabled={!!localSub.esKilometraje}
-              onChange={e => setLocalSub(s => ({ ...s, tieneComensales: e.target.checked }))}
-              className="w-3.5 h-3.5"
-            />
-            <span className={localSub.esKilometraje ? 'text-gray-300' : ''}>Comensales</span>
-          </label>
-        </div>
+        <TipoGastoRadio value={tipoGasto} onChange={handleTipoChange} />
         <div>
           <select
             value={localSub.seccionPDF || 'varios'}
@@ -646,6 +666,9 @@ function SubcategoriaRow({ categoriaId, sub, subIdx, totalSubs, editing, onEdit,
             ≤ {sub.limite}€
           </span>
         )}
+        {sub.esNormal && (
+          <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">normal</span>
+        )}
         {sub.esKilometraje && (
           <span className="text-xs text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">km</span>
         )}
@@ -670,19 +693,31 @@ function SubcategoriaRow({ categoriaId, sub, subIdx, totalSubs, editing, onEdit,
 
 function AddSubcategoriaRow({ onAdd }) {
   const [open, setOpen] = useState(false)
+  const [tipoGasto, setTipoGasto] = useState('ticket')
   const [localSub, setLocalSub] = useState({
     nombre: '',
     limite: null,
     tieneTicket: true,
     esKilometraje: false,
     tieneComensales: false,
+    esNormal: false,
     seccionPDF: 'varios',
   })
+
+  const handleTipoChange = (tipo) => {
+    setTipoGasto(tipo)
+    setLocalSub(s => ({ ...s, ...applyTipoGasto(tipo) }))
+  }
+
+  const resetForm = () => {
+    setTipoGasto('ticket')
+    setLocalSub({ nombre: '', limite: null, tieneTicket: true, esKilometraje: false, tieneComensales: false, esNormal: false, seccionPDF: 'varios' })
+  }
 
   const handleAdd = () => {
     if (!localSub.nombre.trim()) return
     onAdd({ id: uuidv4(), ...localSub, nombre: localSub.nombre.trim() })
-    setLocalSub({ nombre: '', limite: null, tieneTicket: true, esKilometraje: false, tieneComensales: false, seccionPDF: 'varios' })
+    resetForm()
     setOpen(false)
   }
 
@@ -719,42 +754,7 @@ function AddSubcategoriaRow({ onAdd }) {
           step="0.01"
         />
       </div>
-      <div className="flex flex-wrap gap-3">
-        <label className="flex items-center gap-1 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={!!localSub.tieneTicket}
-            disabled={!!localSub.esKilometraje}
-            onChange={e => setLocalSub(s => ({ ...s, tieneTicket: e.target.checked }))}
-            className="w-3.5 h-3.5"
-          />
-          <span className={localSub.esKilometraje ? 'text-gray-300' : ''}>Ticket</span>
-        </label>
-        <label className="flex items-center gap-1 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={!!localSub.esKilometraje}
-            onChange={e => setLocalSub(s => ({
-              ...s,
-              esKilometraje: e.target.checked,
-              tieneTicket: e.target.checked ? false : s.tieneTicket,
-              tieneComensales: e.target.checked ? false : s.tieneComensales,
-            }))}
-            className="w-3.5 h-3.5"
-          />
-          <span>Kilometraje</span>
-        </label>
-        <label className="flex items-center gap-1 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={!!localSub.tieneComensales}
-            disabled={!!localSub.esKilometraje}
-            onChange={e => setLocalSub(s => ({ ...s, tieneComensales: e.target.checked }))}
-            className="w-3.5 h-3.5"
-          />
-          <span className={localSub.esKilometraje ? 'text-gray-300' : ''}>Comensales</span>
-        </label>
-      </div>
+      <TipoGastoRadio value={tipoGasto} onChange={handleTipoChange} />
       <select
         value={localSub.seccionPDF || 'varios'}
         onChange={e => setLocalSub(s => ({ ...s, seccionPDF: e.target.value }))}
@@ -769,7 +769,7 @@ function AddSubcategoriaRow({ onAdd }) {
           Añadir
         </button>
         <button
-          onClick={() => { setOpen(false); setLocalSub({ nombre: '', limite: null, tieneTicket: true, esKilometraje: false, tieneComensales: false, seccionPDF: 'varios' }) }}
+          onClick={() => { setOpen(false); resetForm() }}
           className="flex-1 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs"
         >
           Cancelar

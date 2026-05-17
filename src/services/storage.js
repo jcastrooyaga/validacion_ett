@@ -98,6 +98,19 @@ export function runMigrations() {
     }
   }
   if (changed) setCategorias(cats)
+
+  // Migration 2: add esNormal field to existing subcategories
+  const catsForNormal = getCategorias()
+  let changedNormal = false
+  for (const cat of catsForNormal) {
+    for (const sub of cat.subcategorias || []) {
+      if (sub.esNormal === undefined) {
+        sub.esNormal = false
+        changedNormal = true
+      }
+    }
+  }
+  if (changedNormal) setCategorias(catsForNormal)
 }
 
 export function getSubcategoria(categoriaId, subcategoriaId) {

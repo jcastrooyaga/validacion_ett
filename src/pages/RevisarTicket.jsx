@@ -169,6 +169,7 @@ export default function RevisarTicket() {
 
   const currentSub = getSubcategoria(form.categoriaId, form.subcategoriaId)
   const currentCat = getCategoria(form.categoriaId)
+  const isNormal = state.esNormal || currentSub?.esNormal
   const numComensales = (currentSub?.tieneComensales && form.comensales.length > 0)
     ? form.comensales.filter(c => c.trim()).length
     : 1
@@ -217,7 +218,7 @@ export default function RevisarTicket() {
       toast.error('Selecciona categoría y subcategoría')
       return
     }
-    if (isOverLimit) {
+    if (!isNormal && isOverLimit) {
       toast.error('El importe supera el límite permitido')
       return
     }
@@ -236,9 +237,9 @@ export default function RevisarTicket() {
         importeIVA: parseFloat(form.importeIVA) || 0,
         comercio: form.comercio,
         descripcion: form.descripcion,
-        imagenBlob: imagenBlob || null,
-        imagenMiniatura: imagenMiniatura || null,
-        estadoIA: isExisting ? 'confirmado' : 'manual',
+        imagenBlob: isNormal ? null : (imagenBlob || null),
+        imagenMiniatura: isNormal ? null : (imagenMiniatura || null),
+        estadoIA: isNormal ? 'manual' : (isExisting ? 'confirmado' : 'manual'),
         proveedorIA: null,
         comensales: form.comensales.filter(c => c.trim()),
         esKilometraje: false,
@@ -319,11 +320,11 @@ export default function RevisarTicket() {
           </svg>
         </button>
         <h1 className="text-lg font-semibold flex-1">
-          {isExisting ? 'Revisar ticket' : 'Nuevo gasto'}
+          {isNormal ? 'Gasto normal' : isExisting ? 'Revisar ticket' : 'Nuevo gasto'}
         </h1>
         <button
           onClick={handleConfirm}
-          disabled={saving || analyzing || isOverLimit || !form.categoriaId}
+          disabled={saving || analyzing || (!isNormal && isOverLimit) || !form.categoriaId || (isNormal && !(parseFloat(form.importe) > 0))}
           className="px-4 py-1.5 bg-white text-primary font-semibold rounded-lg text-sm disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {saving ? '...' : 'Guardar'}
@@ -331,101 +332,38 @@ export default function RevisarTicket() {
       </header>
 
       <div className="flex-1 overflow-y-auto relative">
-        {/* Image */}
-        {imagenBlob && (
-          <div className="relative bg-black">
-            <img
-              src={imagenBlob}
-              alt="Ticket"
-              className="w-full max-h-64 object-contain cursor-zoom-in"
-              onClick={() => setZoomImage(true)}
-            />
-          </div>
-        )}
+        {isNormal ? (
+          /* ---- Simplified form for Normal type ---- */
+          <div className="px-4 py-4 flex flex-col gap-4">
+            {/* Fecha */}
+            <FormField label="Fecha">
+              <input
+                type="date"
+                value={form.fecha}
+                onChange={e => handleField('fecha', e.target.value)}
+                className="input-field"
+              />
+            </FormField>
 
-        {/* AI analysis spinner overlay */}
-        {analyzing && (
-          <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-10 gap-3">
-            <span className="animate-spin w-10 h-10 border-4 border-primary border-t-transparent rounded-full" />
-            <p className="text-sm font-semibold text-gray-700">Analizando ticket...</p>
-            <p className="text-xs text-gray-400">{providerLabel}</p>
-          </div>
-        )}
+            {/* Descripción with counter */}
+            <FormField label="Descripción (máx. 30 caracteres)">
+              <div className="relative">
+                <textarea
+                  value={form.descripcion}
+                  onChange={e => handleField('descripcion', e.target.value.slice(0, 30))}
+                  placeholder="Descripción del gasto"
+                  rows={2}
+                  maxLength={30}
+                  className="input-field resize-none"
+                />
+                <span className={`absolute bottom-2 right-3 text-xs ${form.descripcion.length >= 30 ? 'text-red-500' : 'text-gray-400'}`}>
+                  {form.descripcion.length}/30
+                </span>
+              </div>
+            </FormField>
 
-        <div className="px-4 py-4 flex flex-col gap-4">
-          {/* Offline notice */}
-          {state.offline && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
-              Sin conexion — introduce los datos manualmente. Se analizara automaticamente al reconectar.
-            </div>
-          )}
-
-          {/* Confidence badge */}
-          {confianzaIA && !analyzing && (
-            <div className="flex items-center gap-2">
-              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${CONFIDENCE_STYLES[confianzaIA] || CONFIDENCE_STYLES.baja}`}>
-                IA: {confianzaIA}
-              </span>
-              <span className="text-xs text-gray-400">Confianza del analisis automatico</span>
-            </div>
-          )}
-
-          {/* Categoria */}
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Categoria</label>
-            <select
-              value={form.categoriaId}
-              onChange={e => handleCatChange(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              <option value="">Selecciona categoria</option>
-              {categorias.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.nombre}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Subcategoria */}
-          {form.categoriaId && (
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Subcategoria</label>
-              <select
-                value={form.subcategoriaId}
-                onChange={e => handleSubcatChange(e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                <option value="">Selecciona subcategoria</option>
-                {getCategoria(form.categoriaId)?.subcategorias?.map(sub => (
-                  <option key={sub.id} value={sub.id}>{sub.nombre}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Comercio */}
-          <FormField label="Comercio">
-            <input
-              type="text"
-              value={form.comercio}
-              onChange={e => handleField('comercio', e.target.value)}
-              placeholder="Nombre del establecimiento"
-              className="input-field"
-            />
-          </FormField>
-
-          {/* Fecha */}
-          <FormField label="Fecha">
-            <input
-              type="date"
-              value={form.fecha}
-              onChange={e => handleField('fecha', e.target.value)}
-              className="input-field"
-            />
-          </FormField>
-
-          {/* Importe y IVA */}
-          <div className="flex gap-3">
-            <FormField label="Importe total (€)" className="flex-1">
+            {/* Importe */}
+            <FormField label="Importe (€)">
               <input
                 type="number"
                 step="0.01"
@@ -436,104 +374,241 @@ export default function RevisarTicket() {
                 className="input-field"
               />
             </FormField>
-            <FormField label="IVA (€)" className="flex-1">
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={form.importeIVA}
-                onChange={e => handleField('importeIVA', e.target.value)}
-                placeholder="0.00"
-                className="input-field"
+
+            {/* Limit indicator for normal type too */}
+            {limiteEfectivo != null && (
+              <LimitIndicator
+                limite={limiteEfectivo}
+                importe={parseFloat(form.importe) || 0}
+                desglose={null}
               />
-            </FormField>
-          </div>
+            )}
 
-          {/* Limit indicator */}
-          {limiteEfectivo != null && (
-            <LimitIndicator
-              limite={limiteEfectivo}
-              importe={parseFloat(form.importe) || 0}
-              desglose={currentSub?.tieneComensales && numComensales > 1
-                ? `${numComensales} comensales × ${currentSub.limite.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €`
-                : null}
-            />
-          )}
-
-          {/* Descripcion */}
-          <FormField label="Descripcion">
-            <textarea
-              value={form.descripcion}
-              onChange={e => handleField('descripcion', e.target.value)}
-              placeholder="Descripcion del gasto"
-              rows={3}
-              className="input-field resize-none"
-            />
-          </FormField>
-
-          {/* Comensales */}
-          {showComensales && (
-            <div className="flex flex-col gap-3">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Comensales</label>
-              {/* Stepper */}
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-gray-600">Número de comensales:</span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (form.comensales.length > 1) {
-                        setForm(f => ({ ...f, comensales: f.comensales.slice(0, -1) }))
-                      }
-                    }}
-                    disabled={form.comensales.length <= 1}
-                    className="w-8 h-8 rounded-full bg-gray-100 text-gray-700 font-bold text-lg flex items-center justify-center disabled:opacity-30"
-                  >−</button>
-                  <span className="w-6 text-center font-semibold">{form.comensales.length}</span>
-                  <button
-                    type="button"
-                    onClick={() => setForm(f => ({ ...f, comensales: [...f.comensales, ''] }))}
-                    className="w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-lg flex items-center justify-center"
-                  >+</button>
-                </div>
-              </div>
-              {/* Name fields */}
-              {form.comensales.map((c, idx) => {
-                const isProfile = idx === 0
-                return (
-                  <div key={idx} className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400 w-4">{idx + 1}.</span>
-                    <input
-                      type="text"
-                      value={c}
-                      onChange={e => handleComensalChange(idx, e.target.value)}
-                      readOnly={isProfile}
-                      placeholder={isProfile ? perfil.nombreCompleto || 'Tu nombre' : `Comensal ${idx + 1}`}
-                      className={`flex-1 input-field ${isProfile ? 'bg-gray-50 text-gray-500' : ''}`}
-                    />
-                  </div>
-                )
-              })}
+            {/* Bottom actions */}
+            <div className="flex gap-3 pt-2 pb-4">
+              <button
+                onClick={handleDiscard}
+                className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-semibold text-sm bg-white"
+              >
+                Descartar
+              </button>
+              <button
+                onClick={handleConfirm}
+                disabled={saving || !(parseFloat(form.importe) > 0)}
+                className="flex-2 flex-grow-[2] py-3 rounded-xl bg-primary text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Guardando...' : 'Confirmar gasto'}
+              </button>
             </div>
-          )}
-
-          {/* Bottom actions */}
-          <div className="flex gap-3 pt-2 pb-4">
-            <button
-              onClick={handleDiscard}
-              className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-semibold text-sm bg-white"
-            >
-              Descartar
-            </button>
-            <button
-              onClick={handleConfirm}
-              disabled={saving || analyzing || isOverLimit || !form.categoriaId}
-              className="flex-2 flex-grow-[2] py-3 rounded-xl bg-primary text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {saving ? 'Guardando...' : analyzing ? 'Analizando...' : 'Confirmar gasto'}
-            </button>
           </div>
-        </div>
+        ) : (
+          /* ---- Full form (ticket / km / comensales) ---- */
+          <>
+            {/* Image */}
+            {imagenBlob && (
+              <div className="relative bg-black">
+                <img
+                  src={imagenBlob}
+                  alt="Ticket"
+                  className="w-full max-h-64 object-contain cursor-zoom-in"
+                  onClick={() => setZoomImage(true)}
+                />
+              </div>
+            )}
+
+            {/* AI analysis spinner overlay */}
+            {analyzing && (
+              <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-10 gap-3">
+                <span className="animate-spin w-10 h-10 border-4 border-primary border-t-transparent rounded-full" />
+                <p className="text-sm font-semibold text-gray-700">Analizando ticket...</p>
+                <p className="text-xs text-gray-400">{providerLabel}</p>
+              </div>
+            )}
+
+            <div className="px-4 py-4 flex flex-col gap-4">
+              {/* Offline notice */}
+              {state.offline && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+                  Sin conexion — introduce los datos manualmente. Se analizara automaticamente al reconectar.
+                </div>
+              )}
+
+              {/* Confidence badge */}
+              {confianzaIA && !analyzing && (
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${CONFIDENCE_STYLES[confianzaIA] || CONFIDENCE_STYLES.baja}`}>
+                    IA: {confianzaIA}
+                  </span>
+                  <span className="text-xs text-gray-400">Confianza del analisis automatico</span>
+                </div>
+              )}
+
+              {/* Categoria */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Categoria</label>
+                <select
+                  value={form.categoriaId}
+                  onChange={e => handleCatChange(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  <option value="">Selecciona categoria</option>
+                  {categorias.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.nombre}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Subcategoria */}
+              {form.categoriaId && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Subcategoria</label>
+                  <select
+                    value={form.subcategoriaId}
+                    onChange={e => handleSubcatChange(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  >
+                    <option value="">Selecciona subcategoria</option>
+                    {getCategoria(form.categoriaId)?.subcategorias?.map(sub => (
+                      <option key={sub.id} value={sub.id}>{sub.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Comercio */}
+              <FormField label="Comercio">
+                <input
+                  type="text"
+                  value={form.comercio}
+                  onChange={e => handleField('comercio', e.target.value)}
+                  placeholder="Nombre del establecimiento"
+                  className="input-field"
+                />
+              </FormField>
+
+              {/* Fecha */}
+              <FormField label="Fecha">
+                <input
+                  type="date"
+                  value={form.fecha}
+                  onChange={e => handleField('fecha', e.target.value)}
+                  className="input-field"
+                />
+              </FormField>
+
+              {/* Importe y IVA */}
+              <div className="flex gap-3">
+                <FormField label="Importe total (€)" className="flex-1">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={form.importe}
+                    onChange={e => handleField('importe', e.target.value)}
+                    placeholder="0.00"
+                    className="input-field"
+                  />
+                </FormField>
+                <FormField label="IVA (€)" className="flex-1">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={form.importeIVA}
+                    onChange={e => handleField('importeIVA', e.target.value)}
+                    placeholder="0.00"
+                    className="input-field"
+                  />
+                </FormField>
+              </div>
+
+              {/* Limit indicator */}
+              {limiteEfectivo != null && (
+                <LimitIndicator
+                  limite={limiteEfectivo}
+                  importe={parseFloat(form.importe) || 0}
+                  desglose={currentSub?.tieneComensales && numComensales > 1
+                    ? `${numComensales} comensales × ${currentSub.limite.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €`
+                    : null}
+                />
+              )}
+
+              {/* Descripcion */}
+              <FormField label="Descripcion">
+                <textarea
+                  value={form.descripcion}
+                  onChange={e => handleField('descripcion', e.target.value)}
+                  placeholder="Descripcion del gasto"
+                  rows={3}
+                  className="input-field resize-none"
+                />
+              </FormField>
+
+              {/* Comensales */}
+              {showComensales && (
+                <div className="flex flex-col gap-3">
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Comensales</label>
+                  {/* Stepper */}
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-gray-600">Número de comensales:</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (form.comensales.length > 1) {
+                            setForm(f => ({ ...f, comensales: f.comensales.slice(0, -1) }))
+                          }
+                        }}
+                        disabled={form.comensales.length <= 1}
+                        className="w-8 h-8 rounded-full bg-gray-100 text-gray-700 font-bold text-lg flex items-center justify-center disabled:opacity-30"
+                      >−</button>
+                      <span className="w-6 text-center font-semibold">{form.comensales.length}</span>
+                      <button
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, comensales: [...f.comensales, ''] }))}
+                        className="w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-lg flex items-center justify-center"
+                      >+</button>
+                    </div>
+                  </div>
+                  {/* Name fields */}
+                  {form.comensales.map((c, idx) => {
+                    const isProfile = idx === 0
+                    return (
+                      <div key={idx} className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400 w-4">{idx + 1}.</span>
+                        <input
+                          type="text"
+                          value={c}
+                          onChange={e => handleComensalChange(idx, e.target.value)}
+                          readOnly={isProfile}
+                          placeholder={isProfile ? perfil.nombreCompleto || 'Tu nombre' : `Comensal ${idx + 1}`}
+                          className={`flex-1 input-field ${isProfile ? 'bg-gray-50 text-gray-500' : ''}`}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Bottom actions */}
+              <div className="flex gap-3 pt-2 pb-4">
+                <button
+                  onClick={handleDiscard}
+                  className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-semibold text-sm bg-white"
+                >
+                  Descartar
+                </button>
+                <button
+                  onClick={handleConfirm}
+                  disabled={saving || analyzing || isOverLimit || !form.categoriaId}
+                  className="flex-2 flex-grow-[2] py-3 rounded-xl bg-primary text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {saving ? 'Guardando...' : analyzing ? 'Analizando...' : 'Confirmar gasto'}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Zoom image modal */}

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useGastos } from '../hooks/useGastos'
 import { useCategories } from '../hooks/useCategories'
 import { useToast } from '../components/Toast'
-import { getPerfil, getConfigOneDrive } from '../services/storage'
+import { getPerfil } from '../services/storage'
 import { getDirHandle } from '../services/db'
 
 function getMesStr(date) {
@@ -60,7 +60,11 @@ export default function NotaGastos() {
     try {
       const dirHandle = await getDirHandle()
       if (dirHandle) {
-        const perm = await dirHandle.queryPermission({ mode: 'readwrite' })
+        let perm = await dirHandle.queryPermission({ mode: 'readwrite' })
+        if (perm === 'prompt') {
+          // Ask user to re-confirm access to the stored folder
+          perm = await dirHandle.requestPermission({ mode: 'readwrite' })
+        }
         if (perm === 'granted') {
           const fileHandle = await dirHandle.getFileHandle(filename, { create: true })
           const writable = await fileHandle.createWritable()
@@ -68,11 +72,13 @@ export default function NotaGastos() {
           await writable.write(pdfBlob)
           await writable.close()
           savedToFolder = true
-          toast.success(`PDF guardado en ${dirHandle.name}`)
+          toast.success(`PDF guardado en "${dirHandle.name}"`)
         }
       }
     } catch (folderErr) {
-      console.warn('Could not save to folder:', folderErr)
+      if (folderErr.name !== 'AbortError') {
+        console.warn('Could not save to folder:', folderErr)
+      }
     }
 
     if (savedToFolder) return true
@@ -84,11 +90,10 @@ export default function NotaGastos() {
         const pdfBlob = doc.output('blob')
         const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' })
         if (navigator.canShare({ files: [pdfFile] })) {
-          const rutaOneDrive = getConfigOneDrive().rutaOneDrive
           await navigator.share({
             files: [pdfFile],
             title: `Nota de gastos ${mes}`,
-            text: rutaOneDrive ? `Guardar en: ${rutaOneDrive}` : undefined,
+            text: undefined,
           })
           shared = true
           toast.success('PDF compartido')
