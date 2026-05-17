@@ -98,12 +98,29 @@ export default function Kilometraje() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+        {/* Price info */}
+        <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 flex items-center justify-between">
+          <span className="text-sm text-blue-700">
+            Precio/km configurado: {precioPorKm.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €/km
+          </span>
+          <span className="text-xs text-blue-400">Cambiar en Ajustes</span>
+        </div>
+
         {/* Calc display */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 text-center">
           <p className="text-sm text-gray-500 mb-1">
-            {km > 0 ? `${km} km × ${precioPorKm.toFixed(2)} €/km` : `Precio: ${precioPorKm.toFixed(2)} €/km`}
+            {km > 0
+              ? `${km.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 1 })} km × ${precioPorKm.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €/km`
+              : `Introduce los kilómetros para calcular`}
           </p>
-          <p className="text-4xl font-bold text-primary">{total.toFixed(2)} €</p>
+          <p className="text-4xl font-bold text-primary">
+            {total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+          </p>
+          {km > 0 && (
+            <p className="text-xs text-gray-400 mt-1">
+              {km.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 1 })} km × {precioPorKm.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €/km = {total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+            </p>
+          )}
         </div>
 
         {/* Origen */}

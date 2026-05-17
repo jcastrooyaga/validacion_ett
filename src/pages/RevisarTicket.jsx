@@ -178,7 +178,16 @@ export default function RevisarTicket() {
   const handleCatChange = (catId) => {
     const cat = getCategoria(catId)
     const firstSub = cat?.subcategorias?.[0]
-    setForm(f => ({ ...f, categoriaId: catId, subcategoriaId: firstSub?.id || '' }))
+    const perfil = getPerfil()
+    const initComensales = firstSub?.tieneComensales && perfil.nombreCompleto ? [perfil.nombreCompleto] : []
+    setForm(f => ({ ...f, categoriaId: catId, subcategoriaId: firstSub?.id || '', comensales: initComensales }))
+  }
+
+  const handleSubcatChange = (subId) => {
+    const sub = getSubcategoria(form.categoriaId, subId)
+    const perfil = getPerfil()
+    const initComensales = sub?.tieneComensales && perfil.nombreCompleto ? [perfil.nombreCompleto] : []
+    setForm(f => ({ ...f, subcategoriaId: subId, comensales: initComensales }))
   }
 
   const handleAddComensales = () => {
@@ -353,7 +362,7 @@ export default function RevisarTicket() {
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Subcategoria</label>
               <select
                 value={form.subcategoriaId}
-                onChange={e => handleField('subcategoriaId', e.target.value)}
+                onChange={e => handleSubcatChange(e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
               >
                 <option value="">Selecciona subcategoria</option>
@@ -412,8 +421,8 @@ export default function RevisarTicket() {
           </div>
 
           {/* Limit indicator */}
-          {currentSub?.limite != null && form.importe && (
-            <LimitIndicator limite={currentSub.limite} importe={parseFloat(form.importe)} />
+          {currentSub?.limite != null && (
+            <LimitIndicator limite={currentSub.limite} importe={parseFloat(form.importe) || 0} />
           )}
 
           {/* Descripcion */}
