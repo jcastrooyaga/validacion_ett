@@ -133,3 +133,35 @@ export async function getDirHandle() {
     return null
   }
 }
+
+export async function migrateGastosCategorias() {
+  const migKey = 'migration_v3_gastos_done'
+  if (localStorage.getItem(migKey)) return
+
+  const db = await getDB()
+  const all = await db.getAll(STORE_NAME)
+  const catMap = {
+    'desplazamientos': 'locomocion',
+    'manutencion':     'restaurantes',
+    'representacion':  'invitaciones',
+    'alojamiento':     'hoteles',
+    'material':        'varios',
+    'formacion':       'varios',
+    'otros':           'varios',
+  }
+  // Special case: kilometraje subcat moves to compensaciones_km
+  const tx = db.transaction(STORE_NAME, 'readwrite')
+  for (const g of all) {
+    let changed = false
+    if (g.subcategoriaId === 'kilometraje' && g.categoriaId === 'desplazamientos') {
+      g.categoriaId = 'compensaciones_km'
+      changed = true
+    } else if (catMap[g.categoriaId]) {
+      g.categoriaId = catMap[g.categoriaId]
+      changed = true
+    }
+    if (changed) await tx.store.put(g)
+  }
+  await tx.done
+  localStorage.setItem(migKey, '1')
+}

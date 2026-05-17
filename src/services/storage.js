@@ -111,6 +111,16 @@ export function runMigrations() {
     }
   }
   if (changedNormal) setCategorias(catsForNormal)
+
+  // Migration 3: remap to 6 fixed categories
+  if (!localStorage.getItem('migration_v3_done')) {
+    const currentCats = getCategorias()
+    const oldIds = ['desplazamientos','manutencion','representacion','alojamiento','material','formacion','otros']
+    if (currentCats.some(c => oldIds.includes(c.id))) {
+      setCategorias(JSON.parse(JSON.stringify(defaultCategories)))
+    }
+    localStorage.setItem('migration_v3_done', '1')
+  }
 }
 
 export function getSubcategoria(categoriaId, subcategoriaId) {

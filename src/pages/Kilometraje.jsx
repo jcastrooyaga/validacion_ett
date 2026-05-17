@@ -50,7 +50,7 @@ export default function Kilometraje() {
         id,
         fecha: form.fecha,
         mes,
-        categoriaId: state.categoria?.id || 'desplazamientos',
+        categoriaId: state.categoria?.id || 'compensaciones_km',
         subcategoriaId: state.subcategoria?.id || 'kilometraje',
         importe: parseFloat(total.toFixed(2)),
         importeIVA: 0,

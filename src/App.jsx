@@ -11,6 +11,7 @@ import Ajustes from './pages/Ajustes'
 import { ToastProvider, useToast } from './components/Toast'
 import { processPendingTickets } from './services/ai/AIService'
 import { getCategorias } from './services/storage'
+import { migrateGastosCategorias } from './services/db'
 
 function OfflineQueueProcessor() {
   const toast = useToast()
@@ -45,6 +46,10 @@ function OfflineQueueProcessor() {
 }
 
 export default function App() {
+  useEffect(() => {
+    migrateGastosCategorias().catch(console.error)
+  }, [])
+
   return (
     <BrowserRouter>
       <ToastProvider>

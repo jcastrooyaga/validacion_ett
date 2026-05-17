@@ -1,23 +1,63 @@
 import jsPDF from 'jspdf'
-import { getPerfil, getCategorias } from './storage'
+import { getPerfil } from './storage'
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-const PAGE_W = 210
-const PAGE_H = 297
-const MARGIN_L = 10
-const MARGIN_R = 10
-const MARGIN_T = 10
-const MARGIN_B = 12
-const HEADER_H = 32
-const CONTENT_TOP = 42
-const CONTENT_BOTTOM = 275
-const LEFT_COL_X = 10
-const LEFT_COL_W = 93
-const DIVIDER_X = 105
-const RIGHT_COL_X = 107
-const RIGHT_COL_W = 93
-const ROW_H = 5
-const SECTION_TITLE_H = 8
+// ─── Page layout constants ────────────────────────────────────────────────────
+const PW = 210, PH = 297          // A4
+const ML = 9, MR = 9              // left/right margins (unused directly but kept for reference)
+const LOGO_X = 10, LOGO_Y = 8, LOGO_W = 20, LOGO_H = 20
+const HDR_LINE_Y = 27             // horizontal line under header
+const BOX_X = 9, BOX_Y = 27      // content box top-left
+const BOX_W = 192, BOX_H = 240   // content box: (9,27) to (201,267)
+const BOX_BOTTOM = BOX_Y + BOX_H // = 267
+const CDIV_X = 105                // center vertical divider x
+const LEFT_X = BOX_X + 1         // left col content starts: x=10
+const LEFT_W = CDIV_X - LEFT_X - 1  // ~94mm
+const RIGHT_X = CDIV_X + 2       // right col content starts: x=107
+const RIGHT_W = BOX_X + BOX_W - RIGHT_X - 1  // ~93mm
+
+// Fixed horizontal separators INSIDE left column
+const LEFT_SEP1 = 157             // line between LOCOMOCION and HOTELES
+const LEFT_SEP2 = 194             // line between HOTELES and RESTAURANTES
+
+// Fixed horizontal separator in right column
+const RIGHT_SEP = 178             // line between COMPENSACIONES and INVITACIONES/VARIOS
+
+// Sub-divider inside lower-right area (INVITACIONES | VARIOS)
+const RSUB_DIV_X = 154            // vertical line separating INVITACIONES (left) from VARIOS (right)
+const RINV_W = RSUB_DIV_X - RIGHT_X - 1   // INVITACIONES width
+const RVAR_X = RSUB_DIV_X + 1
+const RVAR_W = BOX_X + BOX_W - RVAR_X - 1
+
+// Liquidación block
+const LIQ_Y = 228                 // where TOTAL GASTOS starts
+const LIQ_LINE1_Y = LIQ_Y - 1    // horizontal line above TOTAL GASTOS
+const LIQ_LINE2_Y = 242           // horizontal line above LIQUIDACIÓN
+const LIQ_LABEL_Y = 247           // LIQUIDACIÓN label y
+
+// Signature area
+const SIG_Y = 251                 // "VºBº" y
+const SIG_LABELS_Y = 255          // "Interesado | Superior directo | Dirección" y
+const SIG_LINE_Y = 264            // signature underlines y
+
+const ROW_H = 5                   // standard row height mm
+const TITLE_H = 6                 // section title height
+const HDR_H = 5                   // column headers height
+
+// Data row start positions
+const locomocion_data_y   = BOX_Y + TITLE_H + HDR_H + ROW_H + 1
+const hoteles_data_y      = LEFT_SEP1 + TITLE_H + HDR_H + ROW_H + 1
+const restaurantes_data_y = LEFT_SEP2 + TITLE_H + HDR_H + ROW_H + 1
+const compkm_data_y       = BOX_Y + TITLE_H + HDR_H + ROW_H + 1
+const inv_data_y          = RIGHT_SEP + TITLE_H + HDR_H + ROW_H + 1
+const varios_data_y       = RIGHT_SEP + TITLE_H + HDR_H + ROW_H + 1
+
+// Data area limits
+const locomocion_max_y    = LEFT_SEP1 - ROW_H - 2
+const hoteles_max_y       = LEFT_SEP2 - ROW_H - 2
+const restaurantes_max_y  = BOX_BOTTOM - ROW_H - 4
+const compkm_max_y        = RIGHT_SEP - 2
+const inv_max_y           = LIQ_LINE1_Y - ROW_H - 2
+const varios_max_y        = LIQ_LINE1_Y - ROW_H - 2
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -44,46 +84,62 @@ function truncateText(doc, text, maxWidth) {
   return t + '…'
 }
 
+function getSubNombre(g, categorias) {
+  if (!categorias) return ''
+  for (const cat of categorias) {
+    const sub = cat.subcategorias?.find(s => s.id === g.subcategoriaId)
+    if (sub) return sub.nombre
+  }
+  return g.subcategoriaId || ''
+}
+
+function getSeccionPDF(g, categorias) {
+  if (g.esKilometraje) return 'kilometraje'
+  if (!categorias) return 'varios'
+  for (const cat of categorias) {
+    const sub = cat.subcategorias?.find(s => s.id === g.subcategoriaId)
+    if (sub) return sub.seccionPDF || 'varios'
+  }
+  return 'varios'
+}
+
 // ─── Header ──────────────────────────────────────────────────────────────────
 
 function drawHeader(doc, perfil, periodoInicio, periodoFin) {
   const logoBase64 = localStorage.getItem('logoEmpresa')
   if (logoBase64) {
     try {
-      // Strip the data URL prefix
       const b64 = logoBase64.replace(/^data:image\/\w+;base64,/, '')
-      // Detect format
       const fmt = logoBase64.startsWith('data:image/png') ? 'PNG' : 'JPEG'
-      doc.addImage(b64, fmt, 10, 10, 18, 18)
+      doc.addImage(b64, fmt, LOGO_X, LOGO_Y, LOGO_W, LOGO_H)
     } catch (e) {
-      // Fallback placeholder
       doc.setDrawColor(180)
-      doc.rect(10, 10, 18, 18)
+      doc.rect(LOGO_X, LOGO_Y, LOGO_W, LOGO_H)
     }
   } else {
     doc.setDrawColor(180)
     doc.setFillColor(240, 240, 240)
-    doc.rect(10, 10, 18, 18, 'FD')
+    doc.rect(LOGO_X, LOGO_Y, LOGO_W, LOGO_H, 'FD')
     doc.setFontSize(6)
     doc.setFont('times', 'italic')
     doc.setTextColor(150)
-    doc.text('LOGO', 19, 20, { align: 'center' })
+    doc.text('LOGO', LOGO_X + LOGO_W / 2, LOGO_Y + LOGO_H / 2, { align: 'center' })
     doc.setTextColor(0)
   }
 
-  // Name line
-  const nameX = 32
+  // Name line at y=15
+  const nameX = 33
+  doc.setFontSize(9)
   doc.setFont('times', 'bold')
-  doc.setFontSize(11)
-  doc.text('Nombre:', nameX, 16)
+  doc.text('Nombre:', nameX, 15)
   const labelW = doc.getTextWidth('Nombre:')
   doc.setFont('times', 'normal')
-  doc.text(`  ${perfil.nombreCompleto || ''}`, nameX + labelW, 16)
+  doc.text(`  ${perfil.nombreCompleto || ''}`, nameX + labelW, 15)
 
-  // Period line
-  doc.setFontSize(9)
+  // Period line at y=22
   let px = nameX
-  const py = 23
+  const py = 22
+  doc.setFontSize(8)
 
   const boldParts = [
     { text: 'Periodo del:', bold: true },
@@ -102,195 +158,300 @@ function drawHeader(doc, perfil, periodoInicio, periodoFin) {
     px += doc.getTextWidth(part.text)
   }
 
-  // Separator line
+  // Separator line at HDR_LINE_Y
   doc.setDrawColor(0)
   doc.setLineWidth(0.3)
-  doc.line(MARGIN_L, 30, PAGE_W - MARGIN_R, 30)
+  doc.line(BOX_X, HDR_LINE_Y, BOX_X + BOX_W, HDR_LINE_Y)
 }
 
-// ─── Section drawing ─────────────────────────────────────────────────────────
+// ─── Page Frame ──────────────────────────────────────────────────────────────
 
-/**
- * Draw a section (title + headers + rows + optional total footer).
- * Returns { nextY, overflowed, remainingRows }
- * rowExtras: optional array of strings (one per row) to render as small indented text below each row
- */
-function drawSection(doc, title, headers, rows, x, y, colWidth, availableBottom, totalLabel, totalAmount, rowExtras) {
-  const titleFontSize = 9
-  const headerFontSize = 7.5
-  const dataFontSize = 7.5
-  const footerFontSize = 8
-  const EXTRA_ROW_H = 4
+function drawPageFrame(doc) {
+  doc.setDrawColor(0)
+  doc.setLineWidth(0.3)
 
-  // Title
-  if (y + SECTION_TITLE_H > availableBottom) {
-    return { nextY: y, overflowed: true, remainingRows: rows }
-  }
+  // Outer border
+  doc.rect(BOX_X, BOX_Y, BOX_W, BOX_H)
 
-  doc.setFontSize(titleFontSize)
-  doc.setFont('times', 'bold')
-  doc.text(title, x, y + 5)
-  // Underline title
-  const titleW = doc.getTextWidth(title)
+  // Center vertical divider
+  doc.line(CDIV_X, BOX_Y, CDIV_X, BOX_BOTTOM)
+
+  // Left column separators
   doc.setLineWidth(0.2)
-  doc.line(x, y + 5.5, x + titleW, y + 5.5)
+  doc.line(BOX_X, LEFT_SEP1, CDIV_X, LEFT_SEP1)
+  doc.line(BOX_X, LEFT_SEP2, CDIV_X, LEFT_SEP2)
 
-  // Column headers
-  const headerY = y + SECTION_TITLE_H - 1
-  doc.setFontSize(headerFontSize)
-  doc.setFont('times', 'italic')
+  // Right column separator
+  doc.line(CDIV_X, RIGHT_SEP, BOX_X + BOX_W, RIGHT_SEP)
 
-  let hx = x
-  for (const h of headers) {
-    const label = h.label
-    if (h.align === 'right') {
-      doc.text(label, hx + h.w, headerY, { align: 'right' })
-    } else if (h.align === 'center') {
-      doc.text(label, hx + h.w / 2, headerY, { align: 'center' })
-    } else {
-      doc.text(label, hx, headerY)
-    }
-    hx += h.w
-  }
-  // Underline headers
-  doc.setLineWidth(0.15)
-  doc.line(x, headerY + 0.8, x + colWidth, headerY + 0.8)
+  // Sub-divider in lower right
+  doc.line(RSUB_DIV_X, RIGHT_SEP, RSUB_DIV_X, LIQ_LINE1_Y)
 
-  let curY = y + SECTION_TITLE_H + ROW_H - 1
+  // Liquidación separator lines
+  doc.line(CDIV_X, LIQ_LINE1_Y, BOX_X + BOX_W, LIQ_LINE1_Y)
+  doc.line(CDIV_X, LIQ_LINE2_Y, BOX_X + BOX_W, LIQ_LINE2_Y)
 
-  // Data rows
-  for (let i = 0; i < rows.length; i++) {
-    if (curY > availableBottom) {
-      return { nextY: curY, overflowed: true, remainingRows: rows.slice(i) }
-    }
-    const row = rows[i]
-    doc.setFontSize(dataFontSize)
-    doc.setFont('times', 'normal')
-
-    let rx = x
-    for (let ci = 0; ci < headers.length; ci++) {
-      const h = headers[ci]
-      const cellVal = row[ci] !== undefined ? String(row[ci]) : ''
-      const truncated = truncateText(doc, cellVal, h.w - 0.5)
-
-      if (h.bold) {
-        doc.setFont('times', 'bold')
-      } else {
-        doc.setFont('times', 'normal')
-      }
-
-      if (h.align === 'right') {
-        doc.text(truncated, rx + h.w, curY, { align: 'right' })
-      } else if (h.align === 'center') {
-        doc.text(truncated, rx + h.w / 2, curY, { align: 'center' })
-      } else {
-        doc.text(truncated, rx, curY)
-      }
-      rx += h.w
-    }
-    curY += ROW_H
-
-    // Row extra (e.g. comensales names)
-    const extra = rowExtras?.[i]
-    if (extra) {
-      doc.setFontSize(6.5)
-      doc.setFont('times', 'normal')
-      doc.setTextColor(0.5 * 255, 0.5 * 255, 0.5 * 255)
-      const extraText = truncateText(doc, `→ ${extra}`, colWidth - 5)
-      doc.text(extraText, x + 5, curY)
-      doc.setTextColor(0)
-      curY += EXTRA_ROW_H
-    }
-  }
-
-  // Footer total
-  if (totalLabel !== undefined && totalAmount !== undefined) {
-    if (curY + ROW_H > availableBottom) {
-      return { nextY: curY, overflowed: false, remainingRows: [] }
-    }
-    doc.setFontSize(footerFontSize)
-    const [beforeBold, boldPart] = totalLabel.split('**')
-    doc.setFont('times', 'normal')
-    doc.text(`Total `, x, curY)
-    const tw1 = doc.getTextWidth('Total ')
-    doc.setFont('times', 'bold')
-    doc.text(boldPart || totalLabel, x + tw1, curY)
-    const tw2 = doc.getTextWidth(boldPart || totalLabel)
-    doc.setFont('times', 'bold')
-    doc.text(fmtAmount(totalAmount), x + colWidth, curY, { align: 'right' })
-    curY += ROW_H
-  }
-
-  return { nextY: curY + 2, overflowed: false, remainingRows: [] }
+  // Signature underlines
+  doc.setLineWidth(0.2)
+  doc.line(LEFT_X, SIG_LINE_Y, CDIV_X - 2, SIG_LINE_Y)
+  doc.line(CDIV_X + 2, SIG_LINE_Y, RSUB_DIV_X - 2, SIG_LINE_Y)
+  doc.line(RSUB_DIV_X + 2, SIG_LINE_Y, BOX_X + BOX_W - 1, SIG_LINE_Y)
 }
 
-// ─── Liquidación block ───────────────────────────────────────────────────────
+// ─── Section Titles ───────────────────────────────────────────────────────────
 
-function drawLiquidacion(doc, totalGastos, x, y) {
-  const labelX = x
-  const valueX = x + 85
-  const lineH = 5.5
-
+function drawSectionTitles(doc) {
+  doc.setFont('times', 'bold')
   doc.setFontSize(8)
 
-  const lines = [
-    { label: 'TOTAL GASTOS', amount: totalGastos, bold: false },
-    { label: 'ANTICIPOS RECIBIDOS', amount: 0, bold: false },
-    { label: 'GASTOS PERSONALES', amount: 0, bold: false },
-    { label: 'LIQUIDACIÓN', amount: totalGastos, bold: true },
-  ]
-
-  for (const line of lines) {
-    doc.setFont('times', line.bold ? 'bold' : 'normal')
-    doc.text(line.label, labelX, y)
-    doc.text(fmtAmount(line.amount), valueX, y, { align: 'right' })
-    y += lineH
+  // Helper: draw centered bold underlined title
+  function centeredTitle(text, colLeftX, colRightX, y) {
+    const midX = (colLeftX + colRightX) / 2
+    doc.text(text, midX, y, { align: 'center' })
+    const tw = doc.getTextWidth(text)
+    doc.setLineWidth(0.15)
+    doc.line(midX - tw / 2, y + 0.7, midX + tw / 2, y + 0.7)
   }
 
-  return y
+  // Left column titles
+  centeredTitle('MEDIOS DE LOCOMOCIÓN', LEFT_X, CDIV_X, BOX_Y + TITLE_H / 2 + 1)
+  centeredTitle('HOTELES', LEFT_X, CDIV_X, LEFT_SEP1 + TITLE_H / 2 + 1)
+  centeredTitle('RESTAURANTES', LEFT_X, CDIV_X, LEFT_SEP2 + TITLE_H / 2 + 1)
+
+  // Right column: COMPENSACIONES KILOMÉTRICAS (full right col width above RIGHT_SEP)
+  centeredTitle('COMPENSACIONES KILOMÉTRICAS', RIGHT_X, BOX_X + BOX_W, BOX_Y + TITLE_H / 2 + 1)
+
+  // Lower right sub-sections
+  centeredTitle('INVITACIONES', RIGHT_X, RSUB_DIV_X, RIGHT_SEP + TITLE_H / 2 + 1)
+  centeredTitle('VARIOS', RVAR_X, BOX_X + BOX_W, RIGHT_SEP + TITLE_H / 2 + 1)
 }
 
-// ─── Firmas ──────────────────────────────────────────────────────────────────
+// ─── Column Headers ───────────────────────────────────────────────────────────
 
-function drawFirmas(doc, y) {
+function drawColumnHeaders(doc) {
+  doc.setFont('times', 'bold')
+  doc.setFontSize(7)
+
+  function underlinedHeader(text, x, y, align) {
+    if (align === 'right') {
+      doc.text(text, x, y, { align: 'right' })
+      const tw = doc.getTextWidth(text)
+      doc.setLineWidth(0.1)
+      doc.line(x - tw, y + 0.6, x, y + 0.6)
+    } else {
+      doc.text(text, x, y)
+      const tw = doc.getTextWidth(text)
+      doc.setLineWidth(0.1)
+      doc.line(x, y + 0.6, x + tw, y + 0.6)
+    }
+  }
+
+  // MEDIOS DE LOCOMOCIÓN headers
+  const locHdrY = BOX_Y + TITLE_H + HDR_H
+  underlinedHeader('Fecha', LEFT_X + 1, locHdrY, 'left')
+  underlinedHeader('Motivo', LEFT_X + 22, locHdrY, 'left')
+  underlinedHeader('Medio', LEFT_X + 54, locHdrY, 'left')
+  underlinedHeader('Importe', CDIV_X - 1, locHdrY, 'right')
+
+  // HOTELES headers
+  const hotHdrY = LEFT_SEP1 + TITLE_H + HDR_H
+  underlinedHeader('Fecha', LEFT_X + 1, hotHdrY, 'left')
+  underlinedHeader('Ciudad', LEFT_X + 22, hotHdrY, 'left')
+  underlinedHeader('Concepto', LEFT_X + 43, hotHdrY, 'left')
+  underlinedHeader('Número', LEFT_X + 68, hotHdrY, 'left')
+  underlinedHeader('Importe', CDIV_X - 1, hotHdrY, 'right')
+
+  // RESTAURANTES headers
+  const restHdrY = LEFT_SEP2 + TITLE_H + HDR_H
+  underlinedHeader('Fecha', LEFT_X + 1, restHdrY, 'left')
+  underlinedHeader('Personas', LEFT_X + 22, restHdrY, 'left')
+  underlinedHeader('Importe', CDIV_X - 1, restHdrY, 'right')
+
+  // COMPENSACIONES KILOMÉTRICAS headers
+  const kmHdrY = BOX_Y + TITLE_H + HDR_H
+  underlinedHeader('Fecha', RIGHT_X + 1, kmHdrY, 'left')
+  underlinedHeader('Motivo(*)', RIGHT_X + 22, kmHdrY, 'left')
+  underlinedHeader('Trayecto', RIGHT_X + 52, kmHdrY, 'left')
+  underlinedHeader('Kilómetros', BOX_X + BOX_W - 1, kmHdrY, 'right')
+
+  // INVITACIONES headers
+  const invHdrY = RIGHT_SEP + TITLE_H + HDR_H
+  underlinedHeader('Fecha', RIGHT_X + 1, invHdrY, 'left')
+  underlinedHeader('Personas', RIGHT_X + 17, invHdrY, 'left')
+  underlinedHeader('Importe', RSUB_DIV_X - 1, invHdrY, 'right')
+
+  // VARIOS headers
+  const varHdrY = RIGHT_SEP + TITLE_H + HDR_H
+  underlinedHeader('Fecha', RVAR_X + 1, varHdrY, 'left')
+  underlinedHeader('Concepto', RVAR_X + 17, varHdrY, 'left')
+  underlinedHeader('Importe', BOX_X + BOX_W - 1, varHdrY, 'right')
+}
+
+// ─── Total line ───────────────────────────────────────────────────────────────
+
+function drawTotalLine(doc, label, amount, colRightX, y) {
+  const amountStr = fmtAmount(amount)
+  const labelStr = `Total ${label}:`
+  doc.setFont('times', 'normal')
+  doc.setFontSize(7)
+  doc.text(labelStr, colRightX - 2, y, { align: 'right' })
+  doc.setFont('times', 'bold')
+  doc.text(amountStr, colRightX, y, { align: 'right' })
+  // Double underline under amount
+  const amtW = doc.getTextWidth(amountStr)
+  doc.setLineWidth(0.2)
+  doc.line(colRightX - amtW, y + 1, colRightX, y + 1)
+  doc.line(colRightX - amtW, y + 1.6, colRightX, y + 1.6)
+  doc.setFont('times', 'normal')
+}
+
+// ─── Liquidación ─────────────────────────────────────────────────────────────
+
+function drawLiquidacion(doc, totalGastos) {
+  doc.setFontSize(7)
+
+  // TOTAL GASTOS
+  doc.setFont('times', 'normal')
+  doc.text('TOTAL GASTOS', RIGHT_X + 1, LIQ_Y)
+  doc.setFont('times', 'bold')
+  doc.text(fmtAmount(totalGastos), BOX_X + BOX_W - 1, LIQ_Y, { align: 'right' })
+
+  // ANTICIPOS RECIBIDOS
+  doc.setFont('times', 'normal')
+  doc.text('ANTICIPOS RECIBIDOS', RIGHT_X + 1, LIQ_Y + 5)
+  doc.setFont('times', 'bold')
+  doc.text(fmtAmount(0), BOX_X + BOX_W - 1, LIQ_Y + 5, { align: 'right' })
+
+  // GASTOS PERSONALES
+  doc.setFont('times', 'normal')
+  doc.text('GASTOS PERSONALES', RIGHT_X + 1, LIQ_Y + 10)
+  doc.setFont('times', 'bold')
+  doc.text(fmtAmount(0), BOX_X + BOX_W - 1, LIQ_Y + 10, { align: 'right' })
+
+  // LIQ_LINE2_Y already drawn by frame
+
+  // LIQUIDACIÓN
+  doc.setFont('times', 'bold')
   doc.setFontSize(7.5)
+  doc.text('LIQUIDACIÓN', RIGHT_X + 1, LIQ_LABEL_Y)
+  doc.text(fmtAmount(totalGastos), BOX_X + BOX_W - 1, LIQ_LABEL_Y, { align: 'right' })
+  doc.setFont('times', 'normal')
+}
+
+// ─── Signature Area ───────────────────────────────────────────────────────────
+
+function drawSignatureArea(doc) {
+  doc.setFontSize(7)
   doc.setFont('times', 'normal')
 
-  const cols = [
-    { label: 'Interesado', x: 20 },
-    { label: 'Superior directo', x: 85 },
-    { label: 'Dirección', x: 160 },
-  ]
+  // VºBº centered between CDIV_X and RSUB_DIV_X
+  const vbMidX = (CDIV_X + RSUB_DIV_X) / 2
+  doc.text('VºBº', vbMidX, SIG_Y, { align: 'center' })
 
-  for (const col of cols) {
-    doc.text(col.label, col.x, y, { align: 'center' })
-  }
+  // Labels
+  const intMidX = (LEFT_X + CDIV_X - 2) / 2
+  const supMidX = (CDIV_X + 2 + RSUB_DIV_X - 2) / 2
+  const dirMidX = (RSUB_DIV_X + 2 + BOX_X + BOX_W - 1) / 2
 
-  doc.setFont('times', 'italic')
-  doc.text('VºBº', 85, y + 5, { align: 'center' })
+  doc.text('Interesado', intMidX, SIG_LABELS_Y, { align: 'center' })
+  doc.text('Superior directo', supMidX, SIG_LABELS_Y, { align: 'center' })
+  doc.text('Dirección', dirMidX, SIG_LABELS_Y, { align: 'center' })
 }
 
-// ─── Footer note ─────────────────────────────────────────────────────────────
+// ─── Footer Note ─────────────────────────────────────────────────────────────
 
 function drawFooterNote(doc) {
-  doc.setFontSize(6)
   doc.setFont('times', 'italic')
-  doc.setTextColor(100)
+  doc.setFontSize(6)
+  doc.setTextColor(0)
   doc.text(
     '(*) Rellenar únicamente si no se adjunta "Titre de mission"',
-    PAGE_W / 2,
-    PAGE_H - MARGIN_B + 4,
-    { align: 'center' }
+    LEFT_X,
+    BOX_BOTTOM + 4
   )
-  doc.setTextColor(0)
 }
 
-// ─── Vertical divider ────────────────────────────────────────────────────────
+// ─── Comensales line ─────────────────────────────────────────────────────────
 
-function drawDivider(doc) {
-  doc.setDrawColor(0)
-  doc.setLineWidth(0.2)
-  doc.line(DIVIDER_X, CONTENT_TOP - 2, DIVIDER_X, CONTENT_BOTTOM)
+function drawComensalesLine(doc, names, x, y, maxW) {
+  doc.setFont('times', 'italic')
+  doc.setFontSize(6)
+  doc.setTextColor(100, 100, 100)
+  const w = maxW || 80
+  doc.text(truncateText(doc, names, w), x, y)
+  doc.setTextColor(0, 0, 0)
+  doc.setFont('times', 'normal')
+}
+
+// ─── Individual row drawing functions ─────────────────────────────────────────
+
+function drawLocomocionRow(doc, g, y, categorias) {
+  doc.setFont('times', 'normal')
+  doc.setFontSize(7)
+  doc.text(fmtDate(g.fecha) || '', LEFT_X + 1, y)
+  doc.text(truncateText(doc, g.descripcion || g.comercio || '', 29), LEFT_X + 22, y)
+  const subNombre = getSubNombre(g, categorias)
+  doc.setFont('times', 'bold')
+  doc.text(truncateText(doc, subNombre.toUpperCase(), 18), LEFT_X + 54, y)
+  doc.text(fmtAmount(g.importe), CDIV_X - 1, y, { align: 'right' })
+  doc.setFont('times', 'normal')
+}
+
+function drawHotelRow(doc, g, y) {
+  doc.setFont('times', 'normal')
+  doc.setFontSize(7)
+  doc.text(fmtDate(g.fecha) || '', LEFT_X + 1, y)
+  doc.text(truncateText(doc, g.comercio || '', 18), LEFT_X + 22, y)
+  doc.text(truncateText(doc, g.descripcion || '', 22), LEFT_X + 43, y)
+  // Número: leave blank
+  doc.setFont('times', 'bold')
+  doc.text(fmtAmount(g.importe), CDIV_X - 1, y, { align: 'right' })
+  doc.setFont('times', 'normal')
+}
+
+function drawRestauranteRow(doc, g, y) {
+  doc.setFont('times', 'normal')
+  doc.setFontSize(7)
+  doc.text(fmtDate(g.fecha) || '', LEFT_X + 1, y)
+  const personas = String((g.comensales || []).filter(c => c && c.trim()).length || 1)
+  doc.text(personas, LEFT_X + 22, y)
+  doc.setFont('times', 'bold')
+  doc.text(fmtAmount(g.importe), CDIV_X - 1, y, { align: 'right' })
+  doc.setFont('times', 'normal')
+}
+
+function drawKmRow(doc, g, y) {
+  doc.setFont('times', 'normal')
+  doc.setFontSize(7)
+  doc.text(fmtDate(g.fecha) || '', RIGHT_X + 1, y)
+  doc.text(truncateText(doc, g.descripcion || '', 26), RIGHT_X + 22, y)
+  const trayecto = [g.origen, g.destino].filter(Boolean).join(' - ')
+  doc.text(truncateText(doc, trayecto, 22), RIGHT_X + 52, y)
+  doc.setFont('times', 'bold')
+  doc.text(String(g.distanciaKm || ''), BOX_X + BOX_W - 1, y, { align: 'right' })
+  doc.setFont('times', 'normal')
+}
+
+function drawInvitacionRow(doc, g, y) {
+  doc.setFont('times', 'normal')
+  doc.setFontSize(7)
+  doc.text(fmtDate(g.fecha) || '', RIGHT_X + 1, y)
+  const personas = String((g.comensales || []).filter(c => c && c.trim()).length || 1)
+  doc.text(personas, RIGHT_X + 17, y)
+  doc.setFont('times', 'bold')
+  doc.text(fmtAmount(g.importe), RSUB_DIV_X - 1, y, { align: 'right' })
+  doc.setFont('times', 'normal')
+}
+
+function drawVarRow(doc, g, y, categorias) {
+  doc.setFont('times', 'normal')
+  doc.setFontSize(7)
+  doc.text(fmtDate(g.fecha) || '', RVAR_X + 1, y)
+  const concepto = g.comercio || g.descripcion || getSubNombre(g, categorias)
+  doc.text(truncateText(doc, concepto, 18), RVAR_X + 17, y)
+  doc.setFont('times', 'bold')
+  doc.text(fmtAmount(g.importe), BOX_X + BOX_W - 1, y, { align: 'right' })
+  doc.setFont('times', 'normal')
 }
 
 // ─── Ticket images ───────────────────────────────────────────────────────────
@@ -327,7 +488,6 @@ async function drawTicketImages(doc, gastosConImagen, categorias) {
           const b64 = raw.replace(/^data:image\/\w+;base64,/, '')
           const fmt = raw.startsWith('data:image/png') ? 'PNG' : 'JPEG'
 
-          // Load image to get dimensions
           await new Promise((resolve) => {
             const img = new Image()
             img.onload = () => {
@@ -352,7 +512,6 @@ async function drawTicketImages(doc, gastosConImagen, categorias) {
               }
 
               // Caption
-              // Find subcategoria name
               let subNombre = ''
               for (const cat of categorias) {
                 const sub = cat.subcategorias.find(s => s.id === g.subcategoriaId)
@@ -374,7 +533,7 @@ async function drawTicketImages(doc, gastosConImagen, categorias) {
                 { align: 'center' }
               )
 
-              // Comensales line (second caption line)
+              // Comensales line
               const comensalesStr = (g.comensales || []).filter(c => c && c.trim()).join(', ')
               if (comensalesStr) {
                 doc.setFontSize(6)
@@ -406,32 +565,16 @@ async function drawTicketImages(doc, gastosConImagen, categorias) {
 export async function generatePDF(gastos, mes, categorias) {
   const perfil = getPerfil()
 
-  // Period
   const [year, month] = mes.split('-').map(Number)
-  const firstDay = new Date(year, month - 1, 1)
-  const lastDay = new Date(year, month, 0)
   const pad2 = n => String(n).padStart(2, '0')
-  const toIso = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
-  const periodoInicio = toIso(firstDay)
-  const periodoFin = toIso(lastDay)
+  const periodoInicio = `${year}-${pad2(month)}-01`
+  const lastD = new Date(year, month, 0).getDate()
+  const periodoFin = `${year}-${pad2(month)}-${pad2(lastD)}`
 
-  // Resolve subcategoria for each gasto
-  function resolveSubcat(g) {
-    if (!categorias) return null
-    for (const cat of categorias) {
-      const sub = cat.subcategorias?.find(s => s.id === g.subcategoriaId)
-      if (sub) return sub
-    }
-    return null
-  }
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  doc.setFont('times', 'normal')
 
-  function getSeccionPDF(g, sub) {
-    // esKilometraje always routes to kilometraje section
-    if (g.esKilometraje || sub?.esKilometraje) return 'kilometraje'
-    return sub?.seccionPDF || 'varios'
-  }
-
-  // Classify gastos by seccionPDF
+  // Classify gastos into sections
   const sections = {
     locomocion: [],
     hoteles: [],
@@ -442,393 +585,109 @@ export async function generatePDF(gastos, mes, categorias) {
   }
 
   for (const g of gastos) {
-    const sub = resolveSubcat(g)
-    const seccion = getSeccionPDF(g, sub)
-    if (sections[seccion]) {
-      sections[seccion].push({ ...g, _sub: sub })
+    const sec = getSeccionPDF(g, categorias)
+    if (sections[sec]) {
+      sections[sec].push(g)
     } else {
-      sections.varios.push({ ...g, _sub: sub })
+      sections.varios.push(g)
     }
   }
 
-  // Defensive: verify all gastos are accounted for
-  const totalProcessed = Object.values(sections).reduce((s, arr) => s + arr.length, 0)
-  if (totalProcessed !== gastos.length) {
-    console.warn(`PDF: ${gastos.length} gastos input but only ${totalProcessed} processed. Some may be duplicated in sections.`)
+  // Sort each section by fecha
+  for (const k of Object.keys(sections)) {
+    sections[k].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
   }
 
-  // Sort each section by date
-  for (const key of Object.keys(sections)) {
-    sections[key].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
-  }
-
-  // Build row arrays
-  const locoRows = sections.locomocion.map(g => [
-    fmtDate(g.fecha),
-    g.descripcion || g.motivo || '',
-    (g._sub?.nombre || '').toUpperCase(),
-    fmtAmount(g.importe),
-  ])
-
-  const hotelRows = sections.hoteles.map(g => [
-    fmtDate(g.fecha),
-    g.comercio || '',
-    g.descripcion || '',
-    g.numero || '',
-    fmtAmount(g.importe),
-  ])
-
-  const restRows = sections.restaurantes.map(g => [
-    fmtDate(g.fecha),
-    String(g.comensales?.length || 1),
-    fmtAmount(g.importe),
-  ])
-  const restExtras = sections.restaurantes.map(g =>
-    g.comensales?.length > 0 ? g.comensales.filter(c => c && c.trim()).join(', ') : null
-  )
-
-  const kmRows = sections.kilometraje.map(g => [
-    fmtDate(g.fecha),
-    g.descripcion || g.motivo || '',
-    `${g.origen || ''} → ${g.destino || ''}`,
-    String(g.kilometros || ''),
-  ])
-
-  const invRows = sections.invitaciones.map(g => [
-    fmtDate(g.fecha),
-    String(g.comensales?.length || 1),
-    fmtAmount(g.importe),
-  ])
-  const invExtras = sections.invitaciones.map(g =>
-    g.comensales?.length > 0 ? g.comensales.filter(c => c && c.trim()).join(', ') : null
-  )
-
-  const variosRows = sections.varios.map(g => [
-    fmtDate(g.fecha),
-    g.comercio || g.descripcion || g._sub?.nombre || '',
-    fmtAmount(g.importe),
-  ])
-
-  // Totals
-  const sumSection = key =>
-    sections[key].reduce((s, g) => s + (parseFloat(g.importe) || 0), 0)
-
-  const totalLocomocion = sumSection('locomocion')
-  const totalHoteles = sumSection('hoteles')
-  const totalRestaurantes = sumSection('restaurantes')
-  const totalInvitaciones = sumSection('invitaciones')
-  const totalVarios = sumSection('varios')
-  const totalGastos = totalLocomocion + totalHoteles + totalRestaurantes + totalInvitaciones + totalVarios
-
-  // Column definitions
-  const locoHeaders = [
-    { label: 'Fecha', w: 18, align: 'left' },
-    { label: 'Motivo', w: 35, align: 'left' },
-    { label: 'Medio', w: 22, align: 'left', bold: true },
-    { label: 'Importe', w: 18, align: 'right' },
-  ]
-
-  const hotelHeaders = [
-    { label: 'Fecha', w: 18, align: 'left' },
-    { label: 'Ciudad', w: 25, align: 'left' },
-    { label: 'Concepto', w: 28, align: 'left' },
-    { label: 'Nº', w: 8, align: 'left' },
-    { label: 'Importe', w: 14, align: 'right' },
-  ]
-
-  const restHeaders = [
-    { label: 'Fecha', w: 18, align: 'left' },
-    { label: 'Personas', w: 15, align: 'center' },
-    { label: 'Importe', w: 60, align: 'right' },
-  ]
-
-  const kmHeaders = [
-    { label: 'Fecha', w: 18, align: 'left' },
-    { label: 'Motivo(*)', w: 30, align: 'left' },
-    { label: 'Trayecto', w: 28, align: 'left' },
-    { label: 'Kilómetros', w: 17, align: 'right' },
-  ]
-
-  const invHeaders = [
-    { label: 'Fecha', w: 18, align: 'left' },
-    { label: 'Personas', w: 15, align: 'center' },
-    { label: 'Importe', w: 60, align: 'right' },
-  ]
-
-  const variosHeaders = [
-    { label: 'Fecha', w: 18, align: 'left' },
-    { label: 'Concepto', w: 55, align: 'left' },
-    { label: 'Importe', w: 20, align: 'right' },
-  ]
-
-  // ─── PDF document ───────────────────────────────────────────────────────────
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-  doc.setFont('times', 'normal')
-
-  // Page 1
+  // Draw page 1 structure
   drawHeader(doc, perfil, periodoInicio, periodoFin)
-  drawDivider(doc)
+  drawPageFrame(doc)
+  drawSectionTitles(doc)
+  drawColumnHeaders(doc)
+
+  // ── MEDIOS DE LOCOMOCIÓN ──
+  let locY = locomocion_data_y
+  for (const g of sections.locomocion) {
+    if (locY > locomocion_max_y) break
+    drawLocomocionRow(doc, g, locY, categorias)
+    locY += ROW_H
+    const names = (g.comensales || []).filter(c => c && c.trim()).join(', ')
+    if (names) {
+      drawComensalesLine(doc, names, LEFT_X + 2, locY)
+      locY += 3.5
+    }
+  }
+  const locTotal = sections.locomocion.reduce((s, g) => s + (parseFloat(g.importe) || 0), 0)
+  if (locTotal > 0) drawTotalLine(doc, 'Desplazamientos', locTotal, CDIV_X - 1, Math.min(locY + 1, LEFT_SEP1 - 4))
+
+  // ── HOTELES ──
+  let hotY = hoteles_data_y
+  for (const g of sections.hoteles) {
+    if (hotY > hoteles_max_y) break
+    drawHotelRow(doc, g, hotY)
+    hotY += ROW_H
+  }
+  const hotTotal = sections.hoteles.reduce((s, g) => s + (parseFloat(g.importe) || 0), 0)
+  if (hotTotal > 0) drawTotalLine(doc, 'Hoteles', hotTotal, CDIV_X - 1, Math.min(hotY + 1, LEFT_SEP2 - 4))
+
+  // ── RESTAURANTES ──
+  let restY = restaurantes_data_y
+  for (const g of sections.restaurantes) {
+    if (restY > restaurantes_max_y) break
+    drawRestauranteRow(doc, g, restY)
+    restY += ROW_H
+    const names = (g.comensales || []).filter(c => c && c.trim()).join(', ')
+    if (names) {
+      drawComensalesLine(doc, names, LEFT_X + 2, restY)
+      restY += 3.5
+    }
+  }
+  const restTotal = sections.restaurantes.reduce((s, g) => s + (parseFloat(g.importe) || 0), 0)
+  if (restTotal > 0) drawTotalLine(doc, 'Restaurantes', restTotal, CDIV_X - 1, Math.min(restY + 1, BOX_BOTTOM - 8))
+
+  // ── COMPENSACIONES KILOMÉTRICAS ──
+  let kmY = compkm_data_y
+  for (const g of sections.kilometraje) {
+    if (kmY > compkm_max_y) break
+    drawKmRow(doc, g, kmY)
+    kmY += ROW_H
+  }
+
+  // ── INVITACIONES ──
+  let invY = inv_data_y
+  for (const g of sections.invitaciones) {
+    if (invY > inv_max_y) break
+    drawInvitacionRow(doc, g, invY)
+    invY += ROW_H
+    const names = (g.comensales || []).filter(c => c && c.trim()).join(', ')
+    if (names) {
+      drawComensalesLine(doc, names, RIGHT_X + 1, invY, RSUB_DIV_X - RIGHT_X - 2)
+      invY += 3.5
+    }
+  }
+  const invTotal = sections.invitaciones.reduce((s, g) => s + (parseFloat(g.importe) || 0), 0)
+  if (invTotal > 0) drawTotalLine(doc, 'Invitaciones', invTotal, RSUB_DIV_X - 1, Math.min(invY + 1, LIQ_LINE1_Y - 4))
+
+  // ── VARIOS ──
+  let varY = varios_data_y
+  for (const g of sections.varios) {
+    if (varY > varios_max_y) break
+    drawVarRow(doc, g, varY, categorias)
+    varY += ROW_H
+  }
+  const varTotal = sections.varios.reduce((s, g) => s + (parseFloat(g.importe) || 0), 0)
+  if (varTotal > 0) drawTotalLine(doc, 'Varios', varTotal, BOX_X + BOX_W - 1, Math.min(varY + 1, LIQ_LINE1_Y - 4))
+
+  // ── Liquidación + signatures ──
+  const totalGastos = Object.values(sections)
+    .flat()
+    .reduce((s, g) => s + (parseFloat(g.importe) || 0), 0)
+
+  drawLiquidacion(doc, totalGastos)
+  drawSignatureArea(doc)
   drawFooterNote(doc)
 
-  // ─── Left column sections ───────────────────────────────────────────────────
-  let leftY = CONTENT_TOP
-
-  // Helper: ensure we have space for at least the title+headers
-  function ensureLeftPage() {
-    if (leftY + SECTION_TITLE_H + ROW_H > CONTENT_BOTTOM) {
-      doc.addPage()
-      drawHeader(doc, perfil, periodoInicio, periodoFin)
-      drawDivider(doc)
-      drawFooterNote(doc)
-      leftY = CONTENT_TOP
-    }
-  }
-
-  // MEDIOS DE LOCOMOCIÓN
-  ensureLeftPage()
-  {
-    let remaining = locoRows
-    let first = true
-    while (remaining.length > 0 || first) {
-      first = false
-      const result = drawSection(
-        doc,
-        'MEDIOS DE LOCOMOCIÓN',
-        locoHeaders,
-        remaining,
-        LEFT_COL_X, leftY, LEFT_COL_W, CONTENT_BOTTOM,
-        '**Desplazamientos:', totalLocomocion
-      )
-      leftY = result.nextY
-      remaining = result.remainingRows
-      if (result.overflowed && remaining.length > 0) {
-        doc.addPage()
-        drawHeader(doc, perfil, periodoInicio, periodoFin)
-        drawDivider(doc)
-        drawFooterNote(doc)
-        leftY = CONTENT_TOP
-      } else {
-        break
-      }
-    }
-  }
-
-  // HOTELES
-  ensureLeftPage()
-  {
-    let remaining = hotelRows
-    let first = true
-    while (remaining.length > 0 || first) {
-      first = false
-      const result = drawSection(
-        doc,
-        'HOTELES',
-        hotelHeaders,
-        remaining,
-        LEFT_COL_X, leftY, LEFT_COL_W, CONTENT_BOTTOM,
-        '**Hoteles:', totalHoteles
-      )
-      leftY = result.nextY
-      remaining = result.remainingRows
-      if (result.overflowed && remaining.length > 0) {
-        doc.addPage()
-        drawHeader(doc, perfil, periodoInicio, periodoFin)
-        drawDivider(doc)
-        drawFooterNote(doc)
-        leftY = CONTENT_TOP
-      } else {
-        break
-      }
-    }
-  }
-
-  // RESTAURANTES
-  ensureLeftPage()
-  {
-    let remaining = restRows
-    let remainingExtras = restExtras
-    let first = true
-    while (remaining.length > 0 || first) {
-      first = false
-      const result = drawSection(
-        doc,
-        'RESTAURANTES',
-        restHeaders,
-        remaining,
-        LEFT_COL_X, leftY, LEFT_COL_W, CONTENT_BOTTOM,
-        '**Restaurantes:', totalRestaurantes,
-        remainingExtras
-      )
-      leftY = result.nextY
-      const consumed = remaining.length - result.remainingRows.length
-      remainingExtras = remainingExtras.slice(consumed)
-      remaining = result.remainingRows
-      if (result.overflowed && remaining.length > 0) {
-        doc.addPage()
-        drawHeader(doc, perfil, periodoInicio, periodoFin)
-        drawDivider(doc)
-        drawFooterNote(doc)
-        leftY = CONTENT_TOP
-      } else {
-        break
-      }
-    }
-  }
-
-  // Track last left-column page
-  const lastLeftPage = doc.internal.getCurrentPageInfo().pageNumber
-
-  // ─── Right column sections ──────────────────────────────────────────────────
-  // Go back to page 1 for the right column
-  doc.setPage(1)
-  let rightY = CONTENT_TOP
-  let rightPage = 1
-
-  function ensureRightPage() {
-    if (rightY + SECTION_TITLE_H + ROW_H > CONTENT_BOTTOM) {
-      rightPage++
-      if (rightPage <= doc.internal.getNumberOfPages()) {
-        doc.setPage(rightPage)
-      } else {
-        doc.addPage()
-        drawHeader(doc, perfil, periodoInicio, periodoFin)
-        drawDivider(doc)
-        drawFooterNote(doc)
-      }
-      rightY = CONTENT_TOP
-    }
-  }
-
-  // COMPENSACIONES KILOMÉTRICAS
-  ensureRightPage()
-  {
-    let remaining = kmRows
-    let first = true
-    while (remaining.length > 0 || first) {
-      first = false
-      const result = drawSection(
-        doc,
-        'COMPENSACIONES KILOMÉTRICAS',
-        kmHeaders,
-        remaining,
-        RIGHT_COL_X, rightY, RIGHT_COL_W, CONTENT_BOTTOM,
-        undefined, undefined  // no total footer for km
-      )
-      rightY = result.nextY
-      remaining = result.remainingRows
-      if (result.overflowed && remaining.length > 0) {
-        rightPage++
-        if (rightPage <= doc.internal.getNumberOfPages()) {
-          doc.setPage(rightPage)
-        } else {
-          doc.addPage()
-          drawHeader(doc, perfil, periodoInicio, periodoFin)
-          drawDivider(doc)
-          drawFooterNote(doc)
-        }
-        rightY = CONTENT_TOP
-      } else {
-        break
-      }
-    }
-  }
-
-  // INVITACIONES
-  ensureRightPage()
-  {
-    let remaining = invRows
-    let remainingExtras = invExtras
-    let first = true
-    while (remaining.length > 0 || first) {
-      first = false
-      const result = drawSection(
-        doc,
-        'INVITACIONES',
-        invHeaders,
-        remaining,
-        RIGHT_COL_X, rightY, RIGHT_COL_W, CONTENT_BOTTOM,
-        '**Invitaciones:', totalInvitaciones,
-        remainingExtras
-      )
-      rightY = result.nextY
-      const consumed = remaining.length - result.remainingRows.length
-      remainingExtras = remainingExtras.slice(consumed)
-      remaining = result.remainingRows
-      if (result.overflowed && remaining.length > 0) {
-        rightPage++
-        if (rightPage <= doc.internal.getNumberOfPages()) {
-          doc.setPage(rightPage)
-        } else {
-          doc.addPage()
-          drawHeader(doc, perfil, periodoInicio, periodoFin)
-          drawDivider(doc)
-          drawFooterNote(doc)
-        }
-        rightY = CONTENT_TOP
-      } else {
-        break
-      }
-    }
-  }
-
-  // VARIOS
-  ensureRightPage()
-  {
-    let remaining = variosRows
-    let first = true
-    while (remaining.length > 0 || first) {
-      first = false
-      const result = drawSection(
-        doc,
-        'VARIOS',
-        variosHeaders,
-        remaining,
-        RIGHT_COL_X, rightY, RIGHT_COL_W, CONTENT_BOTTOM,
-        '**Varios:', totalVarios
-      )
-      rightY = result.nextY
-      remaining = result.remainingRows
-      if (result.overflowed && remaining.length > 0) {
-        rightPage++
-        if (rightPage <= doc.internal.getNumberOfPages()) {
-          doc.setPage(rightPage)
-        } else {
-          doc.addPage()
-          drawHeader(doc, perfil, periodoInicio, periodoFin)
-          drawDivider(doc)
-          drawFooterNote(doc)
-        }
-        rightY = CONTENT_TOP
-      } else {
-        break
-      }
-    }
-  }
-
-  // ─── Liquidación + Firmas ───────────────────────────────────────────────────
-  // Ensure we're on the last page (max of left and right)
-  const totalPages = doc.internal.getNumberOfPages()
-  const lastPage = Math.max(lastLeftPage, rightPage, totalPages)
-  doc.setPage(lastPage)
-
-  // Make sure there's room; if not, add a page
-  const liqH = 4 * 5.5 + 10 + 15  // 4 lines + spacing + firmas
-  if (rightY + liqH > CONTENT_BOTTOM) {
-    doc.addPage()
-    drawHeader(doc, perfil, periodoInicio, periodoFin)
-    drawFooterNote(doc)
-    rightY = CONTENT_TOP
-  }
-
-  const liqEndY = drawLiquidacion(doc, totalGastos, RIGHT_COL_X, rightY + 4)
-  drawFirmas(doc, liqEndY + 12)
-
-  // ─── Ticket images ──────────────────────────────────────────────────────────
-  const gastosConImagen = gastos.filter(g => {
-    const sub = resolveSubcat(g)
-    return !g.esKilometraje && sub?.seccionPDF !== 'kilometraje' && (g.imagenBlob || g.miniatura)
-  })
-
+  // ── Ticket image pages ──
+  const gastosConImagen = gastos.filter(g => !g.esKilometraje && (g.imagenBlob || g.imagenMiniatura))
   await drawTicketImages(doc, gastosConImagen, categorias)
 
   return doc
