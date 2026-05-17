@@ -3,12 +3,25 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
 import { getGasto, saveGasto, deleteGasto } from '../services/db'
 import { useCategories } from '../hooks/useCategories'
-import { getPerfil } from '../services/storage'
+import { getPerfil, getConfigIA } from '../services/storage'
 import { useToast } from '../components/Toast'
 import LimitIndicator from '../components/LimitIndicator'
+import { extractTicketData } from '../services/ai/AIService'
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10)
+}
+
+const PROVIDER_LABELS = {
+  claude: 'Claude (Anthropic)',
+  chatgpt: 'ChatGPT (OpenAI)',
+  perplexity: 'Perplexity',
+}
+
+const CONFIDENCE_STYLES = {
+  alta: 'bg-green-100 text-green-700 border-green-200',
+  media: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  baja: 'bg-red-100 text-red-600 border-red-200',
 }
 
 export default function RevisarTicket() {
@@ -22,6 +35,8 @@ export default function RevisarTicket() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [zoomImage, setZoomImage] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [confianzaIA, setConfianzaIA] = useState(null)
 
   const [form, setForm] = useState({
     categoriaId: state.categoriaId || '',
@@ -55,6 +70,12 @@ export default function RevisarTicket() {
           })
           setImagenBlob(gasto.imagenBlob || null)
           setImagenMiniatura(gasto.imagenMiniatura || null)
+
+          // If we should run AI analysis, do it now
+          if (state.analyzing && gasto.imagenBlob) {
+            setAnalyzing(true)
+            runAIAnalysis(gasto, categorias)
+          }
         } else {
           // New gasto
           const perfil = getPerfil()
@@ -78,6 +99,73 @@ export default function RevisarTicket() {
     }
     load()
   }, [id])
+
+  async function runAIAnalysis(gasto, cats) {
+    const config = getConfigIA()
+    const provider = config.proveedorActivo || 'claude'
+    try {
+      const result = await extractTicketData(gasto.imagenBlob, 'image/jpeg', cats)
+
+      // Build updated gasto record
+      const updated = {
+        ...gasto,
+        comercio: result.comercio ?? gasto.comercio,
+        fecha: result.fecha ?? gasto.fecha,
+        importe: result.importe_total ?? gasto.importe,
+        importeIVA: result.importe_iva ?? gasto.importeIVA,
+        descripcion: result.descripcion_sugerida ?? gasto.descripcion,
+        estadoIA: 'confirmado',
+        proveedorIA: provider,
+        pendienteIA: false,
+        confianzaIA: result.confianza,
+      }
+
+      // Resolve category from suggestion
+      let resolvedCatId = gasto.categoriaId
+      let resolvedSubId = gasto.subcategoriaId
+
+      if (result.categoria_sugerida && cats) {
+        const catMatch = cats.find(
+          c =>
+            c.id === result.categoria_sugerida ||
+            c.nombre.toLowerCase().includes(result.categoria_sugerida.toLowerCase())
+        )
+        if (catMatch) {
+          resolvedCatId = catMatch.id
+          if (result.subcategoria_sugerida) {
+            const subMatch = catMatch.subcategorias?.find(
+              s => s.id === result.subcategoria_sugerida
+            )
+            if (subMatch) resolvedSubId = subMatch.id
+          }
+        }
+      }
+
+      updated.categoriaId = resolvedCatId
+      updated.subcategoriaId = resolvedSubId
+
+      await saveGasto(updated)
+
+      // Update local form state
+      setForm(f => ({
+        ...f,
+        categoriaId: resolvedCatId,
+        subcategoriaId: resolvedSubId,
+        comercio: result.comercio ?? f.comercio,
+        fecha: result.fecha ?? f.fecha,
+        importe: result.importe_total != null ? String(result.importe_total) : f.importe,
+        importeIVA: result.importe_iva != null ? String(result.importe_iva) : f.importeIVA,
+        descripcion: result.descripcion_sugerida ?? f.descripcion,
+      }))
+
+      setConfianzaIA(result.confianza)
+    } catch (err) {
+      console.error('AI analysis failed', err)
+      toast.error('No se pudo analizar el ticket automáticamente. Introduce los datos manualmente.')
+    } finally {
+      setAnalyzing(false)
+    }
+  }
 
   const currentSub = getSubcategoria(form.categoriaId, form.subcategoriaId)
   const currentCat = getCategoria(form.categoriaId)
@@ -104,7 +192,6 @@ export default function RevisarTicket() {
   }
 
   const handleRemoveComensal = (idx) => {
-    // Don't remove first if it's the profile name (readonly)
     const perfil = getPerfil()
     if (idx === 0 && form.comensales[0] === perfil.nombreCompleto) return
     setForm(f => ({ ...f, comensales: f.comensales.filter((_, i) => i !== idx) }))
@@ -161,7 +248,6 @@ export default function RevisarTicket() {
 
   const handleDiscard = async () => {
     if (state.isNew === false && isExisting) {
-      // Came from camera: delete the pending record
       try {
         await deleteGasto(id)
       } catch {}
@@ -179,6 +265,8 @@ export default function RevisarTicket() {
 
   const perfil = getPerfil()
   const showComensales = currentSub?.tieneComensales
+  const config = getConfigIA()
+  const providerLabel = PROVIDER_LABELS[config.proveedorActivo] || config.proveedorActivo
 
   return (
     <div className="min-h-screen min-h-dvh bg-gray-50 flex flex-col max-w-[480px] mx-auto">
@@ -197,14 +285,14 @@ export default function RevisarTicket() {
         </h1>
         <button
           onClick={handleConfirm}
-          disabled={saving || isOverLimit || !form.categoriaId}
+          disabled={saving || analyzing || isOverLimit || !form.categoriaId}
           className="px-4 py-1.5 bg-white text-primary font-semibold rounded-lg text-sm disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {saving ? '...' : 'Guardar'}
         </button>
       </header>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto relative">
         {/* Image */}
         {imagenBlob && (
           <div className="relative bg-black">
@@ -217,16 +305,42 @@ export default function RevisarTicket() {
           </div>
         )}
 
+        {/* AI analysis spinner overlay */}
+        {analyzing && (
+          <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-10 gap-3">
+            <span className="animate-spin w-10 h-10 border-4 border-primary border-t-transparent rounded-full" />
+            <p className="text-sm font-semibold text-gray-700">Analizando ticket...</p>
+            <p className="text-xs text-gray-400">{providerLabel}</p>
+          </div>
+        )}
+
         <div className="px-4 py-4 flex flex-col gap-4">
+          {/* Offline notice */}
+          {state.offline && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+              Sin conexion — introduce los datos manualmente. Se analizara automaticamente al reconectar.
+            </div>
+          )}
+
+          {/* Confidence badge */}
+          {confianzaIA && !analyzing && (
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${CONFIDENCE_STYLES[confianzaIA] || CONFIDENCE_STYLES.baja}`}>
+                IA: {confianzaIA}
+              </span>
+              <span className="text-xs text-gray-400">Confianza del analisis automatico</span>
+            </div>
+          )}
+
           {/* Categoria */}
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Categoría</label>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Categoria</label>
             <select
               value={form.categoriaId}
               onChange={e => handleCatChange(e.target.value)}
               className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
-              <option value="">Selecciona categoría</option>
+              <option value="">Selecciona categoria</option>
               {categorias.map(cat => (
                 <option key={cat.id} value={cat.id}>{cat.nombre}</option>
               ))}
@@ -236,13 +350,13 @@ export default function RevisarTicket() {
           {/* Subcategoria */}
           {form.categoriaId && (
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Subcategoría</label>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Subcategoria</label>
               <select
                 value={form.subcategoriaId}
                 onChange={e => handleField('subcategoriaId', e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
               >
-                <option value="">Selecciona subcategoría</option>
+                <option value="">Selecciona subcategoria</option>
                 {getCategoria(form.categoriaId)?.subcategorias?.map(sub => (
                   <option key={sub.id} value={sub.id}>{sub.nombre}</option>
                 ))}
@@ -303,11 +417,11 @@ export default function RevisarTicket() {
           )}
 
           {/* Descripcion */}
-          <FormField label="Descripción">
+          <FormField label="Descripcion">
             <textarea
               value={form.descripcion}
               onChange={e => handleField('descripcion', e.target.value)}
-              placeholder="Descripción del gasto"
+              placeholder="Descripcion del gasto"
               rows={3}
               className="input-field resize-none"
             />
@@ -349,7 +463,7 @@ export default function RevisarTicket() {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
-                Añadir comensal
+                Anadir comensal
               </button>
             </div>
           )}
@@ -364,10 +478,10 @@ export default function RevisarTicket() {
             </button>
             <button
               onClick={handleConfirm}
-              disabled={saving || isOverLimit || !form.categoriaId}
+              disabled={saving || analyzing || isOverLimit || !form.categoriaId}
               className="flex-2 flex-grow-[2] py-3 rounded-xl bg-primary text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {saving ? 'Guardando...' : 'Confirmar gasto'}
+              {saving ? 'Guardando...' : analyzing ? 'Analizando...' : 'Confirmar gasto'}
             </button>
           </div>
         </div>

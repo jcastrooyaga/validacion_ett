@@ -20,7 +20,10 @@ export default function Home() {
   const { getCategoria, getSubcategoria } = useCategories()
   const toast = useToast()
 
-  const pending = useMemo(() => gastos.filter(g => g.pendienteIA), [gastos])
+  const pending = useMemo(
+    () => gastos.filter(g => g.pendienteIA || g.estadoIA === 'procesado_pendiente_confirmacion'),
+    [gastos]
+  )
 
   const totalAccumulado = useMemo(() => {
     return gastos.reduce((sum, g) => sum + (parseFloat(g.importe) || 0), 0)

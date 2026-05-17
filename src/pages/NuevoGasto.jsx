@@ -5,6 +5,7 @@ import { saveGasto } from '../services/db'
 import { compressImage, createThumbnail, createFullImage } from '../services/db'
 import { useToast } from '../components/Toast'
 import CategorySelector from '../components/CategorySelector'
+import { useOfflineStatus } from '../hooks/useOfflineStatus'
 
 export default function NuevoGasto() {
   const navigate = useNavigate()
@@ -14,6 +15,7 @@ export default function NuevoGasto() {
   const [selectedSub, setSelectedSub] = useState(null)
   const [step, setStep] = useState('category') // 'category' | 'photo'
   const [loading, setLoading] = useState(false)
+  const { isOnline } = useOfflineStatus()
 
   const handleCategorySelect = (cat, sub) => {
     setSelectedCat(cat)
@@ -56,6 +58,8 @@ export default function NuevoGasto() {
       const fecha = now.toISOString().slice(0, 10)
       const mes = fecha.slice(0, 7)
 
+      const online = isOnline
+
       const gasto = {
         id,
         fecha,
@@ -76,21 +80,35 @@ export default function NuevoGasto() {
         destino: null,
         distanciaKm: null,
         precioPorKm: null,
-        pendienteIA: false,
+        pendienteIA: !online,
         creadoEn: now.toISOString(),
         archivado: false,
       }
 
       await saveGasto(gasto)
 
-      navigate(`/revisar/${id}`, {
-        state: {
-          isNew: false,
-          categoriaId: selectedCat.id,
-          subcategoriaId: selectedSub.id,
-          hasImage: true,
-        },
-      })
+      if (online) {
+        navigate(`/revisar/${id}`, {
+          state: {
+            isNew: false,
+            categoriaId: selectedCat.id,
+            subcategoriaId: selectedSub.id,
+            hasImage: true,
+            analyzing: true,
+          },
+        })
+      } else {
+        navigate(`/revisar/${id}`, {
+          state: {
+            isNew: false,
+            categoriaId: selectedCat.id,
+            subcategoriaId: selectedSub.id,
+            hasImage: true,
+            analyzing: false,
+            offline: true,
+          },
+        })
+      }
     } catch (err) {
       toast.error('Error al procesar la imagen')
       console.error(err)

@@ -4,6 +4,7 @@ import { getPerfil, setPerfil, getConfigIA, setConfigIA, getConfigKm, setConfigK
 import { exportAllData, importData } from '../services/db'
 import { useToast } from '../components/Toast'
 import { v4 as uuidv4 } from 'uuid'
+import { testConnection } from '../services/ai/AIService'
 
 const TABS = [
   { id: 'perfil', label: 'Perfil' },
@@ -116,10 +117,12 @@ function TabPerfil({ toast }) {
 function TabIA({ toast }) {
   const [config, setConfig] = useState(getConfigIA)
   const [showKeys, setShowKeys] = useState({})
+  const [testingProvider, setTestingProvider] = useState(null)
+  const [testResults, setTestResults] = useState({})
 
   const handleSave = () => {
     setConfigIA(config)
-    toast.success('Configuración de IA guardada')
+    toast.success('Configuracion de IA guardada')
   }
 
   const handleApiKey = (proveedor, key) => {
@@ -130,6 +133,19 @@ function TabIA({ toast }) {
   }
 
   const toggleShow = (p) => setShowKeys(s => ({ ...s, [p]: !s[p] }))
+
+  const handleTestConnection = async (providerId) => {
+    // Save current config first so testConnection reads the latest keys
+    setConfigIA(config)
+    setTestingProvider(providerId)
+    setTestResults(r => ({ ...r, [providerId]: null }))
+    try {
+      const result = await testConnection(providerId)
+      setTestResults(r => ({ ...r, [providerId]: result }))
+    } finally {
+      setTestingProvider(null)
+    }
+  }
 
   const proveedores = [
     { id: 'claude', label: 'Claude (Anthropic)' },
@@ -159,7 +175,7 @@ function TabIA({ toast }) {
 
       <Section title="API Keys">
         {proveedores.map(p => (
-          <div key={p.id} className="flex flex-col gap-1 mb-3">
+          <div key={p.id} className="flex flex-col gap-2 mb-3">
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{p.label}</label>
             <div className="flex gap-2">
               <input
@@ -185,19 +201,27 @@ function TabIA({ toast }) {
                 )}
               </button>
             </div>
+            {/* Per-provider test button */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleTestConnection(p.id)}
+                disabled={testingProvider === p.id || !config.proveedores[p.id]?.apiKey}
+                className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {testingProvider === p.id ? 'Probando...' : 'Probar conexion'}
+              </button>
+              {testResults[p.id] && (
+                <span className={`text-xs font-semibold ${testResults[p.id].ok ? 'text-green-600' : 'text-red-500'}`}>
+                  {testResults[p.id].ok ? `Conexion correcta` : testResults[p.id].message}
+                </span>
+              )}
+            </div>
           </div>
         ))}
       </Section>
 
-      <button
-        onClick={() => toast.info('Función de prueba de conexión: Próximamente')}
-        className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold text-sm"
-      >
-        Probar conexión
-      </button>
-
       <button onClick={handleSave} className="w-full py-3 bg-primary text-white rounded-xl font-semibold">
-        Guardar configuración
+        Guardar configuracion
       </button>
     </div>
   )
