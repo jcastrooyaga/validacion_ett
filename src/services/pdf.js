@@ -301,9 +301,9 @@ async function drawTicketImages(doc, gastosConImagen, categorias) {
   const IMGS_PER_ROW = 2
   const ROWS_PER_PAGE = 2
   const IMG_MAX_W = 85
-  const IMG_MAX_H = 100
+  const IMG_MAX_H = 95
   const IMG_START_X = [10, 110]
-  const IMG_START_Y = [15, 125]
+  const IMG_START_Y = [12, 130]
   const CAPTION_OFFSET = 3
 
   let imgIndex = 0
@@ -373,6 +373,20 @@ async function drawTicketImages(doc, gastosConImagen, categorias) {
                 baseY + IMG_MAX_H + CAPTION_OFFSET,
                 { align: 'center' }
               )
+
+              // Comensales line (second caption line)
+              const comensalesStr = (g.comensales || []).filter(c => c && c.trim()).join(', ')
+              if (comensalesStr) {
+                doc.setFontSize(6)
+                doc.setTextColor(100, 100, 100)
+                doc.text(
+                  truncateText(doc, `Comensales: ${comensalesStr}`, IMG_MAX_W),
+                  baseX + IMG_MAX_W / 2,
+                  baseY + IMG_MAX_H + CAPTION_OFFSET + 4,
+                  { align: 'center' }
+                )
+                doc.setTextColor(0, 0, 0)
+              }
 
               resolve()
             }

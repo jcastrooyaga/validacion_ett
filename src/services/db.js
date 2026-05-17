@@ -1,7 +1,7 @@
 import { openDB } from 'idb'
 
 const DB_NAME = 'maradona-db'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const STORE_NAME = 'gastos'
 
 let dbPromise = null
@@ -9,14 +9,19 @@ let dbPromise = null
 function getDB() {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
           const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' })
           store.createIndex('mes', 'mes')
           store.createIndex('fecha', 'fecha')
           store.createIndex('categoriaId', 'categoriaId')
           store.createIndex('subcategoriaId', 'subcategoriaId')
           store.createIndex('pendienteIA', 'pendienteIA')
+        }
+        if (oldVersion < 2) {
+          if (!db.objectStoreNames.contains('config')) {
+            db.createObjectStore('config')
+          }
         }
       },
     })
@@ -113,4 +118,18 @@ export async function createThumbnail(file) {
 
 export async function createFullImage(file) {
   return compressImage(file, 1024, 0.85)
+}
+
+export async function storeDirHandle(handle) {
+  const db = await getDB()
+  return db.put('config', handle, 'dirHandle')
+}
+
+export async function getDirHandle() {
+  try {
+    const db = await getDB()
+    return await db.get('config', 'dirHandle')
+  } catch {
+    return null
+  }
 }

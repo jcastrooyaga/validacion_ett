@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useGastos } from '../hooks/useGastos'
 import { useCategories } from '../hooks/useCategories'
 import { useToast } from '../components/Toast'
+import { getPerfil } from '../services/storage'
 import FAB from '../components/FAB'
 
 function getMesStr(date) {
@@ -26,6 +27,7 @@ export default function Home() {
   const { gastos, loading } = useGastos(mes)
   const { categorias } = useCategories()
   const toast = useToast()
+  const perfil = useMemo(() => getPerfil(), [])
 
   const pending = useMemo(
     () => gastos.filter(g => g.pendienteIA || g.estadoIA === 'procesado_pendiente_confirmacion'),
@@ -66,12 +68,22 @@ export default function Home() {
             <p className="text-3xl font-bold mt-0.5">{totalAccumulado.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</p>
             <p className="text-sm text-green-200 mt-0.5">Total acumulado</p>
           </div>
-          {pending.length > 0 && (
-            <div className="flex flex-col items-center bg-amber-500 rounded-xl px-3 py-2">
-              <span className="text-xl font-bold">{pending.length}</span>
-              <span className="text-xs">pendiente{pending.length > 1 ? 's' : ''}</span>
+          <div className="flex flex-col items-end gap-1">
+            <div className="text-right">
+              <p className="text-xs text-green-200">Nota de gastos</p>
+              {perfil.nombreCompleto ? (
+                <p className="text-sm text-white font-medium">{perfil.nombreCompleto}</p>
+              ) : (
+                <p className="text-sm text-green-300 italic">Configura tu perfil</p>
+              )}
             </div>
-          )}
+            {pending.length > 0 && (
+              <div className="flex flex-col items-center bg-amber-500 rounded-xl px-3 py-2 mt-1">
+                <span className="text-xl font-bold">{pending.length}</span>
+                <span className="text-xs">pendiente{pending.length > 1 ? 's' : ''}</span>
+              </div>
+            )}
+          </div>
         </div>
         {/* Month selector */}
         <div className="flex items-center justify-between bg-white/15 rounded-xl px-3 py-2">

@@ -3,6 +3,7 @@ import { useGastos } from '../hooks/useGastos'
 import { useCategories } from '../hooks/useCategories'
 import { useToast } from '../components/Toast'
 import { getPerfil, getConfigOneDrive } from '../services/storage'
+import { getDirHandle } from '../services/db'
 
 function getMesStr(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
@@ -23,6 +24,10 @@ function addMonths(mesStr, delta) {
 export default function NotaGastos() {
   const [mes, setMes] = useState(getMesStr(new Date()))
   const [generating, setGenerating] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [previewUrl, setPreviewUrl] = useState(null)
+  const [previewDoc, setPreviewDoc] = useState(null)
+  const [previewFilename, setPreviewFilename] = useState(null)
   const { gastos, loading } = useGastos(mes)
   const { categorias, getCategoria, getSubcategoria } = useCategories()
   const toast = useToast()
@@ -45,6 +50,65 @@ export default function NotaGastos() {
 
   const total = useMemo(() => gastos.reduce((s, g) => s + (parseFloat(g.importe) || 0), 0), [gastos])
 
+  /**
+   * Performs the actual save/share of a PDF doc.
+   * Returns true if successfully handled (shared, saved to folder, or downloaded).
+   */
+  async function performSave(doc, filename) {
+    // Try to save to stored folder handle (desktop Chrome/Edge)
+    let savedToFolder = false
+    try {
+      const dirHandle = await getDirHandle()
+      if (dirHandle) {
+        const perm = await dirHandle.queryPermission({ mode: 'readwrite' })
+        if (perm === 'granted') {
+          const fileHandle = await dirHandle.getFileHandle(filename, { create: true })
+          const writable = await fileHandle.createWritable()
+          const pdfBlob = doc.output('blob')
+          await writable.write(pdfBlob)
+          await writable.close()
+          savedToFolder = true
+          toast.success(`PDF guardado en ${dirHandle.name}`)
+        }
+      }
+    } catch (folderErr) {
+      console.warn('Could not save to folder:', folderErr)
+    }
+
+    if (savedToFolder) return true
+
+    // Try Web Share API first (iOS Safari)
+    let shared = false
+    try {
+      if (navigator.canShare) {
+        const pdfBlob = doc.output('blob')
+        const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' })
+        if (navigator.canShare({ files: [pdfFile] })) {
+          const rutaOneDrive = getConfigOneDrive().rutaOneDrive
+          await navigator.share({
+            files: [pdfFile],
+            title: `Nota de gastos ${mes}`,
+            text: rutaOneDrive ? `Guardar en: ${rutaOneDrive}` : undefined,
+          })
+          shared = true
+          toast.success('PDF compartido')
+        }
+      }
+    } catch (shareErr) {
+      if (shareErr.name === 'AbortError') {
+        shared = true // User cancelled, don't download
+      }
+      // Other share errors: fall through to download
+    }
+
+    if (!shared) {
+      doc.save(filename)
+      toast.success('PDF generado y descargado')
+    }
+
+    return true
+  }
+
   const handleGenerarPDF = async () => {
     if (gastos.length === 0) {
       toast.warning('No hay gastos en este periodo')
@@ -57,40 +121,44 @@ export default function NotaGastos() {
       const doc = await generatePDF(gastos, mes, categorias)
       const nombreArchivo = `nota_gastos_${mes}_${(perfil.nombreCompleto || 'usuario').replace(/\s+/g, '_').toLowerCase()}.pdf`
 
-      // Try Web Share API first (iOS Safari)
-      let shared = false
-      try {
-        if (navigator.canShare) {
-          const pdfBlob = doc.output('blob')
-          const pdfFile = new File([pdfBlob], nombreArchivo, { type: 'application/pdf' })
-          if (navigator.canShare({ files: [pdfFile] })) {
-            const rutaOneDrive = getConfigOneDrive().rutaOneDrive
-            await navigator.share({
-              files: [pdfFile],
-              title: `Nota de gastos ${mes}`,
-              text: rutaOneDrive ? `Guardar en: ${rutaOneDrive}` : undefined,
-            })
-            shared = true
-            toast.success('PDF compartido')
-          }
-        }
-      } catch (shareErr) {
-        if (shareErr.name === 'AbortError') {
-          shared = true // User cancelled, don't download
-        }
-        // Other share errors: fall through to download
-      }
-
-      if (!shared) {
-        doc.save(nombreArchivo)
-        toast.success('PDF generado y descargado')
-      }
+      // Create blob URL for preview
+      const blob = doc.output('blob')
+      const url = URL.createObjectURL(blob)
+      setPreviewUrl(url)
+      setPreviewDoc(doc)
+      setPreviewFilename(nombreArchivo)
+      setGenerating(false)
+      return // Don't save yet — wait for user to confirm from preview
     } catch (err) {
       console.error('PDF generation error:', err?.message, err?.stack)
       toast.error(`Error al generar el PDF: ${err?.message || 'Error desconocido'}`)
     } finally {
       setGenerating(false)
     }
+  }
+
+  const handleSaveFromPreview = async () => {
+    if (!previewDoc || !previewFilename) return
+    setSaving(true)
+    try {
+      await performSave(previewDoc, previewFilename)
+    } catch (err) {
+      console.error('Save error:', err)
+      toast.error(`Error al guardar: ${err?.message || 'Error desconocido'}`)
+    } finally {
+      URL.revokeObjectURL(previewUrl)
+      setPreviewUrl(null)
+      setPreviewDoc(null)
+      setPreviewFilename(null)
+      setSaving(false)
+    }
+  }
+
+  const handleClosePreview = () => {
+    URL.revokeObjectURL(previewUrl)
+    setPreviewUrl(null)
+    setPreviewDoc(null)
+    setPreviewFilename(null)
   }
 
   return (
@@ -133,7 +201,7 @@ export default function NotaGastos() {
             {/* Summary table */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
               <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
-                <h2 className="text-sm font-semibold text-gray-700">Resumen por categoría</h2>
+                <h2 className="text-sm font-semibold text-gray-700">Resumen por categor&#237;a</h2>
               </div>
               <div className="divide-y divide-gray-50">
                 {resumenPorCategoria.map(([catId, data]) => (
@@ -189,6 +257,53 @@ export default function NotaGastos() {
           </>
         )}
       </div>
+
+      {/* PDF Preview Modal */}
+      {previewUrl && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex flex-col">
+          {/* Modal header */}
+          <div className="bg-white flex items-center justify-between px-4 py-3 shrink-0">
+            <div>
+              <p className="font-semibold text-gray-900 text-sm">Vista previa del PDF</p>
+              <p className="text-xs text-gray-500">{previewFilename}</p>
+            </div>
+            <button
+              onClick={handleClosePreview}
+              className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* PDF iframe (works on desktop Chrome; on iOS opens blank but "Abrir" button works) */}
+          <iframe
+            src={previewUrl}
+            className="flex-1 w-full border-0"
+            title="Vista previa PDF"
+          />
+
+          {/* iOS fallback button + save button */}
+          <div className="bg-white px-4 py-4 flex gap-3 safe-bottom shrink-0 border-t border-gray-100">
+            <a
+              href={previewUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex-1 py-3 rounded-xl border border-primary text-primary font-semibold text-sm text-center"
+            >
+              Abrir PDF
+            </a>
+            <button
+              onClick={handleSaveFromPreview}
+              disabled={saving}
+              className="flex-[2] py-3 rounded-xl bg-primary text-white font-semibold text-sm disabled:opacity-50"
+            >
+              {saving ? 'Guardando...' : 'Guardar / Compartir'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

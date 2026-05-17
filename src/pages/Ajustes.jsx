@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useCategories } from '../hooks/useCategories'
-import { getPerfil, setPerfil, getConfigIA, setConfigIA, getConfigKm, setConfigKm, getConfigOneDrive, setConfigOneDrive } from '../services/storage'
-import { exportAllData, importData, getAllGastos } from '../services/db'
+import { getPerfil, setPerfil, getConfigIA, setConfigIA, getConfigKm, setConfigKm } from '../services/storage'
+import { exportAllData, importData, getAllGastos, storeDirHandle } from '../services/db'
 import { useToast } from '../components/Toast'
 import { v4 as uuidv4 } from 'uuid'
 import { testConnection } from '../services/ai/AIService'
@@ -779,16 +779,59 @@ function AddSubcategoriaRow({ onAdd }) {
   )
 }
 
+// ------- Folder picker section -------
+function TabDatosArchivoSection() {
+  const [folderName, setFolderName] = useState(() => {
+    return localStorage.getItem('carpetaArchivoNombre') || ''
+  })
+  const supportsPicker = typeof window !== 'undefined' && 'showDirectoryPicker' in window
+
+  const handleSelectFolder = async () => {
+    try {
+      const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' })
+      await storeDirHandle(dirHandle)
+      localStorage.setItem('carpetaArchivoNombre', dirHandle.name)
+      setFolderName(dirHandle.name)
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('Folder picker error', err)
+      }
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Carpeta de archivo</label>
+      {supportsPicker ? (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSelectFolder}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed border-primary/40 text-primary text-sm font-medium hover:bg-primary/5 transition-colors"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+            </svg>
+            {folderName ? 'Cambiar carpeta' : 'Seleccionar carpeta'}
+          </button>
+          {folderName && (
+            <span className="text-sm text-gray-600 truncate">&#128193; {folderName}</span>
+          )}
+        </div>
+      ) : (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700">
+          En iPhone, la carpeta se selecciona al guardar el PDF mediante el menu Compartir &rarr; Guardar en Archivos.
+        </div>
+      )}
+      {folderName && supportsPicker && (
+        <p className="text-xs text-gray-400">Los PDFs se guardar&aacute;n autom&aacute;ticamente en esta carpeta.</p>
+      )}
+    </div>
+  )
+}
+
 // ------- Tab Datos -------
 function TabDatos({ toast }) {
   const importRef = useRef(null)
-  const [oneDriveConfig, setOneDriveConfig] = useState(getConfigOneDrive)
-
-  const handleOneDriveChange = (ruta) => {
-    const updated = { rutaOneDrive: ruta }
-    setOneDriveConfig(updated)
-    setConfigOneDrive(updated)
-  }
 
   const handleExport = async () => {
     try {
@@ -828,19 +871,8 @@ function TabDatos({ toast }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <Section title="Carpeta de OneDrive">
-        <FormField label="Carpeta de OneDrive">
-          <input
-            type="text"
-            value={oneDriveConfig.rutaOneDrive}
-            onChange={e => handleOneDriveChange(e.target.value)}
-            placeholder="Ej: OneDrive/Gastos/2025"
-            className="input-field"
-          />
-        </FormField>
-        <p className="text-xs text-gray-400">
-          Referencia para guardar PDFs y tickets. Al compartir, navega a esta carpeta en la app Archivos.
-        </p>
+      <Section title="Carpeta de archivo">
+        <TabDatosArchivoSection />
       </Section>
 
       <Section title="Exportar datos">
