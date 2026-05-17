@@ -289,19 +289,24 @@ function drawColumnHeaders(doc) {
 
 // ─── Total line ───────────────────────────────────────────────────────────────
 
-function drawTotalLine(doc, label, amount, colRightX, y) {
+// colLeftX: left edge of column (to clamp label start within bounds)
+function drawTotalLine(doc, label, amount, colRightX, y, colLeftX = LEFT_X) {
   const amountStr = fmtAmount(amount)
-  const labelStr = `Total ${label}:`
-  doc.setFont('times', 'normal')
+  // Start "Total" at most 55mm before right edge, but never outside the column
+  const indentX = Math.max(colLeftX + 1, colRightX - 55)
   doc.setFontSize(7)
-  doc.text(labelStr, colRightX - 2, y, { align: 'right' })
+  doc.setFont('times', 'normal')
+  doc.text('Total ', indentX, y)
+  const w1 = doc.getTextWidth('Total ')
   doc.setFont('times', 'bold')
+  doc.text(label + ':', indentX + w1, y)
+  // Amount right-aligned at far right, bold
   doc.text(amountStr, colRightX, y, { align: 'right' })
-  // Double underline under amount
+  // Double underline under amount only
   const amtW = doc.getTextWidth(amountStr)
   doc.setLineWidth(0.2)
   doc.line(colRightX - amtW, y + 1, colRightX, y + 1)
-  doc.line(colRightX - amtW, y + 1.6, colRightX, y + 1.6)
+  doc.line(colRightX - amtW, y + 1.7, colRightX, y + 1.7)
   doc.setFont('times', 'normal')
 }
 
@@ -482,7 +487,7 @@ async function drawTicketImages(doc, gastosConImagen, categorias) {
         const baseY = IMG_START_Y[row]
 
         try {
-          const raw = g.imagenBlob || g.miniatura
+          const raw = g.imagenBlob || g.imagenMiniatura
           if (!raw) continue
 
           const b64 = raw.replace(/^data:image\/\w+;base64,/, '')
@@ -665,7 +670,7 @@ export async function generatePDF(gastos, mes, categorias) {
     }
   }
   const invTotal = sections.invitaciones.reduce((s, g) => s + (parseFloat(g.importe) || 0), 0)
-  if (invTotal > 0) drawTotalLine(doc, 'Invitaciones', invTotal, RSUB_DIV_X - 1, Math.min(invY + 1, LIQ_LINE1_Y - 4))
+  if (invTotal > 0) drawTotalLine(doc, 'Invitaciones', invTotal, RSUB_DIV_X - 1, Math.min(invY + 1, LIQ_LINE1_Y - 4), RIGHT_X)
 
   // ── VARIOS ──
   let varY = varios_data_y
@@ -675,11 +680,12 @@ export async function generatePDF(gastos, mes, categorias) {
     varY += ROW_H
   }
   const varTotal = sections.varios.reduce((s, g) => s + (parseFloat(g.importe) || 0), 0)
-  if (varTotal > 0) drawTotalLine(doc, 'Varios', varTotal, BOX_X + BOX_W - 1, Math.min(varY + 1, LIQ_LINE1_Y - 4))
+  if (varTotal > 0) drawTotalLine(doc, 'Varios', varTotal, BOX_X + BOX_W - 1, Math.min(varY + 1, LIQ_LINE1_Y - 4), RVAR_X)
 
   // ── Liquidación + signatures ──
-  const totalGastos = Object.values(sections)
-    .flat()
+  // km section is excluded from money total (it has no monetary section total in the template)
+  const totalGastos = ['locomocion', 'hoteles', 'restaurantes', 'invitaciones', 'varios']
+    .flatMap(k => sections[k])
     .reduce((s, g) => s + (parseFloat(g.importe) || 0), 0)
 
   drawLiquidacion(doc, totalGastos)
