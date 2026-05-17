@@ -31,6 +31,13 @@
   }
 }
 
+/* Reusable component classes */
+@layer components {
+  .input-field {
+    @apply w-full border border-gray-200 rounded-xl px-3 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50;
+  }
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 4px;
