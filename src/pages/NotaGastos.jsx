@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useGastos } from '../hooks/useGastos'
 import { useCategories } from '../hooks/useCategories'
 import { useToast } from '../components/Toast'
+import { getPerfil } from '../services/storage'
 
 function getMesStr(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
@@ -21,6 +22,7 @@ function addMonths(mesStr, delta) {
 
 export default function NotaGastos() {
   const [mes, setMes] = useState(getMesStr(new Date()))
+  const [generating, setGenerating] = useState(false)
   const { gastos, loading } = useGastos(mes)
   const { categorias, getCategoria, getSubcategoria } = useCategories()
   const toast = useToast()
@@ -43,8 +45,25 @@ export default function NotaGastos() {
 
   const total = useMemo(() => gastos.reduce((s, g) => s + (parseFloat(g.importe) || 0), 0), [gastos])
 
-  const handleGenerarPDF = () => {
-    toast.info('Generación de PDF: Próximamente')
+  const handleGenerarPDF = async () => {
+    if (gastos.length === 0) {
+      toast.warning('No hay gastos en este periodo')
+      return
+    }
+    setGenerating(true)
+    try {
+      const perfil = getPerfil()
+      const { generatePDF } = await import('../services/pdf')
+      const doc = await generatePDF(gastos, mes, categorias)
+      const nombreArchivo = `nota_gastos_${mes}_${(perfil.nombreCompleto || 'usuario').replace(/\s+/g, '_').toLowerCase()}.pdf`
+      doc.save(nombreArchivo)
+      toast.success('PDF generado y descargado')
+    } catch (err) {
+      console.error(err)
+      toast.error('Error al generar el PDF')
+    } finally {
+      setGenerating(false)
+    }
   }
 
   return (
@@ -123,12 +142,22 @@ export default function NotaGastos() {
             {/* PDF button */}
             <button
               onClick={handleGenerarPDF}
-              className="w-full py-4 rounded-xl bg-primary text-white font-semibold text-base flex items-center justify-center gap-2 hover:bg-primary-light transition-colors"
+              disabled={generating}
+              className="w-full py-4 rounded-xl bg-primary text-white font-semibold text-base flex items-center justify-center gap-2 hover:bg-primary-light transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-5 h-5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-              </svg>
-              Generar PDF
+              {generating ? (
+                <>
+                  <span className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full inline-block" />
+                  Generando...
+                </>
+              ) : (
+                <>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                  </svg>
+                  Generar PDF
+                </>
+              )}
             </button>
           </>
         )}
