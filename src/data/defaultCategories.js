@@ -12,11 +12,11 @@ export const defaultCategories = [
   },
   {
     id: "manutencion",
-    nombre: "Manutención",
+    nombre: "Restaurantes",
     subcategorias: [
-      { id: "desayuno", nombre: "Desayuno", limite: 10, tieneTicket: true, esKilometraje: false, tieneComensales: false, seccionPDF: "varios" },
-      { id: "comida", nombre: "Comida", limite: 25, tieneTicket: true, esKilometraje: false, tieneComensales: false, seccionPDF: "varios" },
-      { id: "cena", nombre: "Cena", limite: 35, tieneTicket: true, esKilometraje: false, tieneComensales: false, seccionPDF: "varios" }
+      { id: "desayuno", nombre: "Desayuno", limite: 10, tieneTicket: true, esKilometraje: false, tieneComensales: true, seccionPDF: "varios" },
+      { id: "comida", nombre: "Comida", limite: 25, tieneTicket: true, esKilometraje: false, tieneComensales: true, seccionPDF: "varios" },
+      { id: "cena", nombre: "Cena", limite: 35, tieneTicket: true, esKilometraje: false, tieneComensales: true, seccionPDF: "varios" }
     ]
   },
   {

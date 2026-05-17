@@ -473,42 +473,47 @@ export default function RevisarTicket() {
 
           {/* Comensales */}
           {showComensales && (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-3">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Comensales</label>
+              {/* Stepper */}
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-600">Número de comensales:</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (form.comensales.length > 1) {
+                        setForm(f => ({ ...f, comensales: f.comensales.slice(0, -1) }))
+                      }
+                    }}
+                    disabled={form.comensales.length <= 1}
+                    className="w-8 h-8 rounded-full bg-gray-100 text-gray-700 font-bold text-lg flex items-center justify-center disabled:opacity-30"
+                  >−</button>
+                  <span className="w-6 text-center font-semibold">{form.comensales.length}</span>
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, comensales: [...f.comensales, ''] }))}
+                    className="w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-lg flex items-center justify-center"
+                  >+</button>
+                </div>
+              </div>
+              {/* Name fields */}
               {form.comensales.map((c, idx) => {
-                const isProfile = idx === 0 && c === perfil.nombreCompleto
+                const isProfile = idx === 0
                 return (
                   <div key={idx} className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 w-4">{idx + 1}.</span>
                     <input
                       type="text"
                       value={c}
                       onChange={e => handleComensalChange(idx, e.target.value)}
                       readOnly={isProfile}
-                      placeholder={`Comensal ${idx + 1}`}
+                      placeholder={isProfile ? perfil.nombreCompleto || 'Tu nombre' : `Comensal ${idx + 1}`}
                       className={`flex-1 input-field ${isProfile ? 'bg-gray-50 text-gray-500' : ''}`}
                     />
-                    {!isProfile && (
-                      <button
-                        onClick={() => handleRemoveComensal(idx)}
-                        className="w-8 h-8 rounded-full bg-red-100 text-red-500 flex items-center justify-center"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    )}
                   </div>
                 )
               })}
-              <button
-                onClick={handleAddComensales}
-                className="flex items-center gap-2 text-primary text-sm font-medium py-2"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                </svg>
-                Anadir comensal
-              </button>
             </div>
           )}
 

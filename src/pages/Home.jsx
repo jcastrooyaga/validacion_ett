@@ -1,23 +1,30 @@
-import { useMemo } from 'react'
-import { useCurrentMonthGastos } from '../hooks/useGastos'
+import { useState, useMemo } from 'react'
+import { useGastos } from '../hooks/useGastos'
 import { useCategories } from '../hooks/useCategories'
 import { useToast } from '../components/Toast'
-import GastoCard from '../components/GastoCard'
 import FAB from '../components/FAB'
 
-function getCurrentMonthName() {
-  const now = new Date()
-  return now.toLocaleString('es-ES', { month: 'long', year: 'numeric' })
+function getMesStr(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 
-function getCurrentMes() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+function getMesDisplay(mesStr) {
+  const [year, month] = mesStr.split('-')
+  const date = new Date(parseInt(year), parseInt(month) - 1, 1)
+  return date.toLocaleString('es-ES', { month: 'long', year: 'numeric' })
+}
+
+function addMonths(mesStr, delta) {
+  const [year, month] = mesStr.split('-').map(Number)
+  const date = new Date(year, month - 1 + delta, 1)
+  return getMesStr(date)
 }
 
 export default function Home() {
-  const { gastos, loading, remove } = useCurrentMonthGastos()
-  const { categorias, getCategoria, getSubcategoria } = useCategories()
+  const currentMes = getMesStr(new Date())
+  const [mes, setMes] = useState(currentMes)
+  const { gastos, loading } = useGastos(mes)
+  const { categorias } = useCategories()
   const toast = useToast()
 
   const pending = useMemo(
@@ -47,25 +54,16 @@ export default function Home() {
       )
   }, [gastos, categorias])
 
-  const handleDelete = async (id) => {
-    try {
-      await remove(id)
-      toast.success('Gasto eliminado')
-    } catch {
-      toast.error('Error al eliminar')
-    }
-  }
-
-  const monthName = getCurrentMonthName()
+  const mesDisplay = getMesDisplay(mes)
 
   return (
     <div className="max-w-[480px] mx-auto">
       {/* Header */}
       <header className="bg-primary text-white px-4 pt-6 pb-5 safe-top">
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between mb-3">
           <div>
-            <p className="text-sm text-green-200 capitalize">{monthName}</p>
-            <p className="text-3xl font-bold mt-0.5">{totalAccumulado.toFixed(2)} €</p>
+            <p className="text-sm text-green-200 capitalize">{mesDisplay}</p>
+            <p className="text-3xl font-bold mt-0.5">{totalAccumulado.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</p>
             <p className="text-sm text-green-200 mt-0.5">Total acumulado</p>
           </div>
           {pending.length > 0 && (
@@ -75,10 +73,24 @@ export default function Home() {
             </div>
           )}
         </div>
+        {/* Month selector */}
+        <div className="flex items-center justify-between bg-white/15 rounded-xl px-3 py-2">
+          <button onClick={() => setMes(m => addMonths(m, -1))} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/20">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-5 h-5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+            </svg>
+          </button>
+          <span className="text-sm font-semibold capitalize">{mesDisplay}</span>
+          <button onClick={() => setMes(m => addMonths(m, 1))} disabled={mes === currentMes} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/20 disabled:opacity-30">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-5 h-5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+            </svg>
+          </button>
+        </div>
       </header>
 
       {/* Content */}
-      <div className="px-4 py-4">
+      <div className="py-4">
         {loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400">
             <span className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full inline-block" />
@@ -86,48 +98,25 @@ export default function Home() {
         ) : gastos.length === 0 ? (
           <EmptyState />
         ) : (
-          <div className="flex flex-col gap-6">
-            {gastosByCategoria.map(({ catId, nombre, items }) => (
-              <CategoryGroup
-                key={catId}
-                categoriaName={nombre}
-                gastos={items}
-                getSubcategoria={getSubcategoria}
-                catId={catId}
-                onDelete={handleDelete}
-              />
-            ))}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mx-4 mt-4">
+            {gastosByCategoria.map(({ catId, nombre, items }) => {
+              const subtotal = items.reduce((s, g) => s + (parseFloat(g.importe) || 0), 0)
+              return (
+                <div key={catId} className="flex items-center justify-between px-4 py-3 border-b border-gray-50 last:border-0">
+                  <span className="text-sm text-gray-700">{nombre}</span>
+                  <span className="text-sm font-semibold text-gray-900">{subtotal.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</span>
+                </div>
+              )
+            })}
+            <div className="flex items-center justify-between px-4 py-3 bg-primary/5 border-t-2 border-primary/20">
+              <span className="text-base font-bold text-gray-900">TOTAL</span>
+              <span className="text-base font-bold text-primary">{totalAccumulado.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</span>
+            </div>
           </div>
         )}
       </div>
 
       <FAB />
-    </div>
-  )
-}
-
-function CategoryGroup({ categoriaName, gastos, getSubcategoria, catId, onDelete }) {
-  const subtotal = gastos.reduce((s, g) => s + (parseFloat(g.importe) || 0), 0)
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">{categoriaName}</h2>
-        <span className="text-sm font-semibold text-gray-700">{subtotal.toFixed(2)} €</span>
-      </div>
-      <div className="flex flex-col gap-2">
-        {gastos.map(g => {
-          const sub = getSubcategoria(catId, g.subcategoriaId)
-          return (
-            <GastoCard
-              key={g.id}
-              gasto={g}
-              categoriaName={categoriaName}
-              subcategoriaName={sub?.nombre}
-              onDelete={onDelete}
-            />
-          )
-        })}
-      </div>
     </div>
   )
 }

@@ -57,31 +57,37 @@ export default function NotaGastos() {
       const doc = await generatePDF(gastos, mes, categorias)
       const nombreArchivo = `nota_gastos_${mes}_${(perfil.nombreCompleto || 'usuario').replace(/\s+/g, '_').toLowerCase()}.pdf`
 
-      const pdfBlob = doc.output('blob')
-      const pdfFile = new File([pdfBlob], nombreArchivo, { type: 'application/pdf' })
-      const rutaOneDrive = getConfigOneDrive().rutaOneDrive
-
-      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-        try {
-          await navigator.share({
-            files: [pdfFile],
-            title: `Nota de gastos ${mes}`,
-            text: rutaOneDrive ? `Guardar en: ${rutaOneDrive}` : 'Nota de gastos',
-          })
-          toast.success('PDF compartido')
-        } catch (err) {
-          if (err.name !== 'AbortError') {
-            doc.save(nombreArchivo)
-            toast.success('PDF generado y descargado')
+      // Try Web Share API first (iOS Safari)
+      let shared = false
+      try {
+        if (navigator.canShare) {
+          const pdfBlob = doc.output('blob')
+          const pdfFile = new File([pdfBlob], nombreArchivo, { type: 'application/pdf' })
+          if (navigator.canShare({ files: [pdfFile] })) {
+            const rutaOneDrive = getConfigOneDrive().rutaOneDrive
+            await navigator.share({
+              files: [pdfFile],
+              title: `Nota de gastos ${mes}`,
+              text: rutaOneDrive ? `Guardar en: ${rutaOneDrive}` : undefined,
+            })
+            shared = true
+            toast.success('PDF compartido')
           }
         }
-      } else {
+      } catch (shareErr) {
+        if (shareErr.name === 'AbortError') {
+          shared = true // User cancelled, don't download
+        }
+        // Other share errors: fall through to download
+      }
+
+      if (!shared) {
         doc.save(nombreArchivo)
         toast.success('PDF generado y descargado')
       }
     } catch (err) {
-      console.error(err)
-      toast.error('Error al generar el PDF')
+      console.error('PDF generation error:', err?.message, err?.stack)
+      toast.error(`Error al generar el PDF: ${err?.message || 'Error desconocido'}`)
     } finally {
       setGenerating(false)
     }

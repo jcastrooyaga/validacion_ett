@@ -82,6 +82,24 @@ export function setConfigOneDrive(config) {
   setItem('configOneDrive', config)
 }
 
+export function runMigrations() {
+  // Migration 1: rename "Manutención" to "Restaurantes" and enable comensales
+  const cats = getCategorias()
+  let changed = false
+  for (const cat of cats) {
+    if (cat.id === 'manutencion' && cat.nombre === 'Manutención') {
+      cat.nombre = 'Restaurantes'
+      for (const sub of cat.subcategorias) {
+        if (['desayuno', 'comida', 'cena'].includes(sub.id)) {
+          sub.tieneComensales = true
+        }
+      }
+      changed = true
+    }
+  }
+  if (changed) setCategorias(cats)
+}
+
 export function getSubcategoria(categoriaId, subcategoriaId) {
   const cats = getCategorias()
   const cat = cats.find(c => c.id === categoriaId)
