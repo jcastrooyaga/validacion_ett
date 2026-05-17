@@ -73,6 +73,15 @@ export function resetCategorias() {
   setItem(KEYS.CATEGORIAS, defaultCategories)
 }
 
+// Config OneDrive
+export function getConfigOneDrive() {
+  return getItem('configOneDrive', { rutaOneDrive: '' })
+}
+
+export function setConfigOneDrive(config) {
+  setItem('configOneDrive', config)
+}
+
 export function getSubcategoria(categoriaId, subcategoriaId) {
   const cats = getCategorias()
   const cat = cats.find(c => c.id === categoriaId)

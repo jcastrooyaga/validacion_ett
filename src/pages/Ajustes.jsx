@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useCategories } from '../hooks/useCategories'
-import { getPerfil, setPerfil, getConfigIA, setConfigIA, getConfigKm, setConfigKm } from '../services/storage'
+import { getPerfil, setPerfil, getConfigIA, setConfigIA, getConfigKm, setConfigKm, getConfigOneDrive, setConfigOneDrive } from '../services/storage'
 import { exportAllData, importData, getAllGastos } from '../services/db'
 import { useToast } from '../components/Toast'
 import { v4 as uuidv4 } from 'uuid'
@@ -782,6 +782,13 @@ function AddSubcategoriaRow({ onAdd }) {
 // ------- Tab Datos -------
 function TabDatos({ toast }) {
   const importRef = useRef(null)
+  const [oneDriveConfig, setOneDriveConfig] = useState(getConfigOneDrive)
+
+  const handleOneDriveChange = (ruta) => {
+    const updated = { rutaOneDrive: ruta }
+    setOneDriveConfig(updated)
+    setConfigOneDrive(updated)
+  }
 
   const handleExport = async () => {
     try {
@@ -821,6 +828,21 @@ function TabDatos({ toast }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <Section title="Carpeta de OneDrive">
+        <FormField label="Carpeta de OneDrive">
+          <input
+            type="text"
+            value={oneDriveConfig.rutaOneDrive}
+            onChange={e => handleOneDriveChange(e.target.value)}
+            placeholder="Ej: OneDrive/Gastos/2025"
+            className="input-field"
+          />
+        </FormField>
+        <p className="text-xs text-gray-400">
+          Referencia para guardar PDFs y tickets. Al compartir, navega a esta carpeta en la app Archivos.
+        </p>
+      </Section>
+
       <Section title="Exportar datos">
         <p className="text-sm text-gray-500 mb-3">
           Exporta todos tus gastos como archivo JSON para hacer una copia de seguridad.

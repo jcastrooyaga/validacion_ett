@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useGastos } from '../hooks/useGastos'
 import { useCategories } from '../hooks/useCategories'
 import { useToast } from '../components/Toast'
-import { getPerfil } from '../services/storage'
+import { getPerfil, getConfigOneDrive } from '../services/storage'
 
 function getMesStr(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
@@ -56,8 +56,29 @@ export default function NotaGastos() {
       const { generatePDF } = await import('../services/pdf')
       const doc = await generatePDF(gastos, mes, categorias)
       const nombreArchivo = `nota_gastos_${mes}_${(perfil.nombreCompleto || 'usuario').replace(/\s+/g, '_').toLowerCase()}.pdf`
-      doc.save(nombreArchivo)
-      toast.success('PDF generado y descargado')
+
+      const pdfBlob = doc.output('blob')
+      const pdfFile = new File([pdfBlob], nombreArchivo, { type: 'application/pdf' })
+      const rutaOneDrive = getConfigOneDrive().rutaOneDrive
+
+      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        try {
+          await navigator.share({
+            files: [pdfFile],
+            title: `Nota de gastos ${mes}`,
+            text: rutaOneDrive ? `Guardar en: ${rutaOneDrive}` : 'Nota de gastos',
+          })
+          toast.success('PDF compartido')
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            doc.save(nombreArchivo)
+            toast.success('PDF generado y descargado')
+          }
+        }
+      } else {
+        doc.save(nombreArchivo)
+        toast.success('PDF generado y descargado')
+      }
     } catch (err) {
       console.error(err)
       toast.error('Error al generar el PDF')

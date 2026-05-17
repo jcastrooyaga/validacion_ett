@@ -113,12 +113,14 @@ function drawHeader(doc, perfil, periodoInicio, periodoFin) {
 /**
  * Draw a section (title + headers + rows + optional total footer).
  * Returns { nextY, overflowed, remainingRows }
+ * rowExtras: optional array of strings (one per row) to render as small indented text below each row
  */
-function drawSection(doc, title, headers, rows, x, y, colWidth, availableBottom, totalLabel, totalAmount) {
+function drawSection(doc, title, headers, rows, x, y, colWidth, availableBottom, totalLabel, totalAmount, rowExtras) {
   const titleFontSize = 9
   const headerFontSize = 7.5
   const dataFontSize = 7.5
   const footerFontSize = 8
+  const EXTRA_ROW_H = 4
 
   // Title
   if (y + SECTION_TITLE_H > availableBottom) {
@@ -187,6 +189,18 @@ function drawSection(doc, title, headers, rows, x, y, colWidth, availableBottom,
       rx += h.w
     }
     curY += ROW_H
+
+    // Row extra (e.g. comensales names)
+    const extra = rowExtras?.[i]
+    if (extra) {
+      doc.setFontSize(6.5)
+      doc.setFont('times', 'normal')
+      doc.setTextColor(0.5 * 255, 0.5 * 255, 0.5 * 255)
+      const extraText = truncateText(doc, `→ ${extra}`, colWidth - 5)
+      doc.text(extraText, x + 5, curY)
+      doc.setTextColor(0)
+      curY += EXTRA_ROW_H
+    }
   }
 
   // Footer total
@@ -389,11 +403,18 @@ export async function generatePDF(gastos, mes, categorias) {
 
   // Resolve subcategoria for each gasto
   function resolveSubcat(g) {
+    if (!categorias) return null
     for (const cat of categorias) {
-      const sub = cat.subcategorias.find(s => s.id === g.subcategoriaId)
+      const sub = cat.subcategorias?.find(s => s.id === g.subcategoriaId)
       if (sub) return sub
     }
     return null
+  }
+
+  function getSeccionPDF(g, sub) {
+    // esKilometraje always routes to kilometraje section
+    if (g.esKilometraje || sub?.esKilometraje) return 'kilometraje'
+    return sub?.seccionPDF || 'varios'
   }
 
   // Classify gastos by seccionPDF
@@ -408,12 +429,18 @@ export async function generatePDF(gastos, mes, categorias) {
 
   for (const g of gastos) {
     const sub = resolveSubcat(g)
-    const seccion = sub?.seccionPDF || 'varios'
+    const seccion = getSeccionPDF(g, sub)
     if (sections[seccion]) {
       sections[seccion].push({ ...g, _sub: sub })
     } else {
       sections.varios.push({ ...g, _sub: sub })
     }
+  }
+
+  // Defensive: verify all gastos are accounted for
+  const totalProcessed = Object.values(sections).reduce((s, arr) => s + arr.length, 0)
+  if (totalProcessed !== gastos.length) {
+    console.warn(`PDF: ${gastos.length} gastos input but only ${totalProcessed} processed. Some may be duplicated in sections.`)
   }
 
   // Sort each section by date
@@ -442,6 +469,9 @@ export async function generatePDF(gastos, mes, categorias) {
     String(g.comensales?.length || 1),
     fmtAmount(g.importe),
   ])
+  const restExtras = sections.restaurantes.map(g =>
+    g.comensales?.length > 0 ? g.comensales.filter(c => c && c.trim()).join(', ') : null
+  )
 
   const kmRows = sections.kilometraje.map(g => [
     fmtDate(g.fecha),
@@ -455,6 +485,9 @@ export async function generatePDF(gastos, mes, categorias) {
     String(g.comensales?.length || 1),
     fmtAmount(g.importe),
   ])
+  const invExtras = sections.invitaciones.map(g =>
+    g.comensales?.length > 0 ? g.comensales.filter(c => c && c.trim()).join(', ') : null
+  )
 
   const variosRows = sections.varios.map(g => [
     fmtDate(g.fecha),
@@ -599,6 +632,7 @@ export async function generatePDF(gastos, mes, categorias) {
   ensureLeftPage()
   {
     let remaining = restRows
+    let remainingExtras = restExtras
     let first = true
     while (remaining.length > 0 || first) {
       first = false
@@ -608,9 +642,12 @@ export async function generatePDF(gastos, mes, categorias) {
         restHeaders,
         remaining,
         LEFT_COL_X, leftY, LEFT_COL_W, CONTENT_BOTTOM,
-        '**Restaurantes:', totalRestaurantes
+        '**Restaurantes:', totalRestaurantes,
+        remainingExtras
       )
       leftY = result.nextY
+      const consumed = remaining.length - result.remainingRows.length
+      remainingExtras = remainingExtras.slice(consumed)
       remaining = result.remainingRows
       if (result.overflowed && remaining.length > 0) {
         doc.addPage()
@@ -686,6 +723,7 @@ export async function generatePDF(gastos, mes, categorias) {
   ensureRightPage()
   {
     let remaining = invRows
+    let remainingExtras = invExtras
     let first = true
     while (remaining.length > 0 || first) {
       first = false
@@ -695,9 +733,12 @@ export async function generatePDF(gastos, mes, categorias) {
         invHeaders,
         remaining,
         RIGHT_COL_X, rightY, RIGHT_COL_W, CONTENT_BOTTOM,
-        '**Invitaciones:', totalInvitaciones
+        '**Invitaciones:', totalInvitaciones,
+        remainingExtras
       )
       rightY = result.nextY
+      const consumed = remaining.length - result.remainingRows.length
+      remainingExtras = remainingExtras.slice(consumed)
       remaining = result.remainingRows
       if (result.overflowed && remaining.length > 0) {
         rightPage++
@@ -771,7 +812,7 @@ export async function generatePDF(gastos, mes, categorias) {
   // ─── Ticket images ──────────────────────────────────────────────────────────
   const gastosConImagen = gastos.filter(g => {
     const sub = resolveSubcat(g)
-    return sub?.seccionPDF !== 'kilometraje' && (g.imagenBlob || g.miniatura)
+    return !g.esKilometraje && sub?.seccionPDF !== 'kilometraje' && (g.imagenBlob || g.miniatura)
   })
 
   await drawTicketImages(doc, gastosConImagen, categorias)

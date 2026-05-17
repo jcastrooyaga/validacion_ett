@@ -20,6 +20,8 @@ export function useGastos(mes = null) {
 
   useEffect(() => {
     load()
+    window.addEventListener('gastosUpdated', load)
+    return () => window.removeEventListener('gastosUpdated', load)
   }, [load])
 
   const addOrUpdate = useCallback(async (gasto) => {

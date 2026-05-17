@@ -1,4 +1,4 @@
-export default function LimitIndicator({ limite, importe }) {
+export default function LimitIndicator({ limite, importe, desglose }) {
   if (limite === null || limite === undefined) return null
 
   const amount = parseFloat(importe) || 0
@@ -27,6 +27,11 @@ export default function LimitIndicator({ limite, importe }) {
       {isOver && (
         <p className="text-xs text-red-600 mt-1 font-medium">
           El importe supera el límite permitido. No se puede guardar.
+        </p>
+      )}
+      {desglose && (
+        <p className="text-xs text-gray-500 mt-1">
+          Límite calculado: {desglose} = {limite.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
         </p>
       )}
     </div>

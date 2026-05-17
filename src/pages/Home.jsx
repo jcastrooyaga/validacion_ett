@@ -17,7 +17,7 @@ function getCurrentMes() {
 
 export default function Home() {
   const { gastos, loading, remove } = useCurrentMonthGastos()
-  const { getCategoria, getSubcategoria } = useCategories()
+  const { categorias, getCategoria, getSubcategoria } = useCategories()
   const toast = useToast()
 
   const pending = useMemo(
@@ -36,8 +36,16 @@ export default function Home() {
       if (!groups[key]) groups[key] = []
       groups[key].push(g)
     }
-    return groups
-  }, [gastos])
+    // Sort by category order from settings
+    return categorias
+      .filter(cat => groups[cat.id])
+      .map(cat => ({ catId: cat.id, nombre: cat.nombre, items: groups[cat.id] }))
+      .concat(
+        Object.keys(groups)
+          .filter(k => !categorias.find(c => c.id === k))
+          .map(k => ({ catId: k, nombre: k, items: groups[k] }))
+      )
+  }, [gastos, categorias])
 
   const handleDelete = async (id) => {
     try {
@@ -79,19 +87,16 @@ export default function Home() {
           <EmptyState />
         ) : (
           <div className="flex flex-col gap-6">
-            {Object.entries(gastosByCategoria).map(([catId, items]) => {
-              const cat = getCategoria(catId)
-              return (
-                <CategoryGroup
-                  key={catId}
-                  categoriaName={cat?.nombre || catId}
-                  gastos={items}
-                  getSubcategoria={getSubcategoria}
-                  catId={catId}
-                  onDelete={handleDelete}
-                />
-              )
-            })}
+            {gastosByCategoria.map(({ catId, nombre, items }) => (
+              <CategoryGroup
+                key={catId}
+                categoriaName={nombre}
+                gastos={items}
+                getSubcategoria={getSubcategoria}
+                catId={catId}
+                onDelete={handleDelete}
+              />
+            ))}
           </div>
         )}
       </div>

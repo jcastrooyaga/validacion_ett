@@ -3,7 +3,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
 import { getGasto, saveGasto, deleteGasto } from '../services/db'
 import { useCategories } from '../hooks/useCategories'
-import { getPerfil, getConfigIA } from '../services/storage'
+import { getPerfil, getConfigIA, getConfigOneDrive } from '../services/storage'
 import { useToast } from '../components/Toast'
 import LimitIndicator from '../components/LimitIndicator'
 import { extractTicketData } from '../services/ai/AIService'
@@ -169,7 +169,13 @@ export default function RevisarTicket() {
 
   const currentSub = getSubcategoria(form.categoriaId, form.subcategoriaId)
   const currentCat = getCategoria(form.categoriaId)
-  const isOverLimit = currentSub?.limite != null && parseFloat(form.importe || 0) > currentSub.limite
+  const numComensales = (currentSub?.tieneComensales && form.comensales.length > 0)
+    ? form.comensales.filter(c => c.trim()).length
+    : 1
+  const limiteEfectivo = currentSub?.limite != null
+    ? currentSub.limite * numComensales
+    : null
+  const isOverLimit = limiteEfectivo != null && parseFloat(form.importe || 0) > limiteEfectivo
 
   const handleField = (field, value) => {
     setForm(f => ({ ...f, [field]: value }))
@@ -246,6 +252,29 @@ export default function RevisarTicket() {
       }
       await saveGasto(gasto)
       toast.success('Gasto guardado')
+
+      if (imagenBlob && navigator.canShare) {
+        try {
+          const res = await fetch(imagenBlob)
+          const blob = await res.blob()
+          const file = new File([blob], `ticket_${form.fecha}.jpg`, { type: 'image/jpeg' })
+          if (navigator.canShare({ files: [file] })) {
+            const rutaOneDrive = getConfigOneDrive().rutaOneDrive
+            try {
+              await navigator.share({
+                files: [file],
+                title: `Ticket ${form.comercio || form.fecha}`,
+                text: rutaOneDrive ? `Guardar en: ${rutaOneDrive}` : undefined,
+              })
+            } catch (err) {
+              // User cancelled or share failed — gasto is already saved
+            }
+          }
+        } catch (err) {
+          // fetch/share error — gasto is already saved
+        }
+      }
+
       navigate('/')
     } catch (err) {
       toast.error('Error al guardar')
@@ -421,8 +450,14 @@ export default function RevisarTicket() {
           </div>
 
           {/* Limit indicator */}
-          {currentSub?.limite != null && (
-            <LimitIndicator limite={currentSub.limite} importe={parseFloat(form.importe) || 0} />
+          {limiteEfectivo != null && (
+            <LimitIndicator
+              limite={limiteEfectivo}
+              importe={parseFloat(form.importe) || 0}
+              desglose={currentSub?.tieneComensales && numComensales > 1
+                ? `${numComensales} comensales × ${currentSub.limite.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €`
+                : null}
+            />
           )}
 
           {/* Descripcion */}

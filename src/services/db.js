@@ -41,12 +41,16 @@ export async function getGasto(id) {
 
 export async function saveGasto(gasto) {
   const db = await getDB()
-  return db.put(STORE_NAME, gasto)
+  const result = await db.put(STORE_NAME, gasto)
+  window.dispatchEvent(new CustomEvent('gastosUpdated'))
+  return result
 }
 
 export async function deleteGasto(id) {
   const db = await getDB()
-  return db.delete(STORE_NAME, id)
+  const result = await db.delete(STORE_NAME, id)
+  window.dispatchEvent(new CustomEvent('gastosUpdated'))
+  return result
 }
 
 export async function getPendingIA() {
